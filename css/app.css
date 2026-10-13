@@ -220,7 +220,7 @@ html.stage .sheet-panel { background: #2a2221; }
   .inst-pick { grid-template-columns: 1fr; }
   .inst { flex-direction: row; gap: .8rem; text-align: left; }
 }
-.toast { position: fixed; left: 50%; bottom: calc(var(--sb) + 24px); transform: translate(-50%, 20px); opacity: 0; background: var(--brown); color: #fff; padding: .7rem 1.1rem; border-radius: 999px; font-weight: 800; z-index: 300; transition: .25s; max-width: 90vw; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+.toast { position: fixed; left: 50%; bottom: calc(var(--sb) + 24px); transform: translate(-50%, 20px); opacity: 0; background: var(--brown); color: #fff; padding: .7rem 1.1rem; border-radius: 18px; width: max-content; font-weight: 800; z-index: 300; transition: .25s; max-width: 90vw; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- drawer (pop-out menu) */
@@ -399,3 +399,39 @@ html.stage .cd-pop-date { color: var(--brown); }
 
 .empty-state { padding: 3rem; text-align: center; display: flex; flex-direction: column; gap: 1rem; align-items: center; }
 @media (prefers-reduced-motion: reduce) { .cd-cell { animation: none; } * { transition-duration: .01ms !important; } }
+
+/* ---------- pinned menu bar: pick stays visible and toggles it */
+.menu-handle { z-index: 45; transition: opacity .2s, transform .2s; }
+.bar-open .menu-handle { opacity: 1; pointer-events: auto; }
+.bar-open .menu-handle .pick-dot svg { fill: var(--amber); transform: rotate(180deg); transition: transform .25s; }
+.tb-end { flex: none; width: calc(var(--sr) + 46px); height: 1px; }
+.bar-open .menu-handle { background: rgba(97,76,73,.96); border-radius: 50%; box-shadow: -10px 0 14px rgba(97,76,73,.9); }
+.bar-open .song-scroll { padding-top: calc(var(--st) + 66px); }
+.song-scroll { transition: padding-top .22s ease; }
+
+/* ---------- instrument pop-up */
+.pop-menu { position: fixed; z-index: 60; width: 220px; background: var(--paper); color: var(--ink); border-radius: 16px; padding: 6px; box-shadow: 0 14px 40px rgba(0,0,0,.28); font-size: 15px; }
+html.stage .pop-menu { background: #2a2221; }
+.pop-title { font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 6px 10px 4px; }
+.pop-item { display: flex; align-items: center; gap: .6rem; width: 100%; border: 0; background: transparent; border-radius: 11px; padding: .65rem .7rem; font-weight: 800; text-align: left; min-height: 46px; }
+.pop-item:active, .pop-item.on { background: rgba(108,154,160,.16); }
+.pop-emo { font-size: 1.3rem; }
+.pop-tag { margin-left: auto; font-size: 12px; color: var(--teal-d); font-weight: 900; }
+.pop-tag.new { background: var(--mint); color: var(--brown); padding: .15em .55em; border-radius: 999px; font-size: 11px; }
+
+/* ---------- stage-name badge (Olden Gray) */
+.stage-badge { display: inline-flex; align-items: center; gap: .35em; border: 1.5px dashed var(--amber); background: transparent; color: var(--rust); border-radius: 999px; padding: .2em .75em .2em .45em; font-family: var(--display); font-size: 1em; letter-spacing: .03em; min-height: 32px; cursor: pointer; transition: transform .15s; }
+.stage-badge:active { transform: scale(.96); }
+.sb-star svg { width: 1.15em; height: 1.15em; fill: var(--amber); display: block; }
+html.stage .stage-badge { color: var(--amber); }
+.stage-badge.on { border: 0; color: #fff; background: linear-gradient(120deg, var(--rust), #D0601F 50%, var(--amber)); box-shadow: 0 2px 0 #7d2b0f, 0 0 0 3px rgba(228,151,42,.25); animation: badgeGlow 2.8s ease-in-out infinite; }
+.stage-badge.on .sb-star svg { fill: #FFE7B8; animation: spinStar 6s linear infinite; }
+.sb-sub { font-family: var(--font); font-weight: 900; font-size: .72em; opacity: .9; text-transform: uppercase; letter-spacing: .06em; }
+@keyframes badgeGlow { 50% { box-shadow: 0 2px 0 #7d2b0f, 0 0 0 6px rgba(228,151,42,.18); } }
+@keyframes spinStar { to { transform: rotate(360deg); } }
+.tag.mine { background: linear-gradient(120deg, var(--rust), var(--amber)); color: #fff; }
+
+.chords-preview { margin: .5em 0 .2em; padding: .5em .7em; border-left: 3px solid var(--teal); border-radius: 0 10px 10px 0; background: rgba(197,222,211,.18); }
+.chords-preview:empty { display: none; }
+
+@media (max-width: 480px) { .song-row .tag:not(.mine) { display: none; } .song-row .tag.mine { font-size: .68rem; } }

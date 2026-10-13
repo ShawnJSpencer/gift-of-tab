@@ -5,6 +5,7 @@ import * as Sync from './sync.js';
 import { logo, countdownParts, emojiRain } from './art.js';
 import { newSong } from './model.js';
 import { importText, guessMeta } from './importer.js';
+import { hasMine } from './versions.js';
 
 const instEmoji = { guitar: '🎸', ukulele: '🪕', piano: '🎹' };
 
@@ -113,6 +114,7 @@ function songRow(s, nav, rerender) {
   return h('div', { class: 'song-row', role: 'button', tabindex: 0, onclick: () => nav('#/song/' + s.id), onkeydown: (e) => { if (e.key === 'Enter') nav('#/song/' + s.id); } },
     h('span', { class: 'sr-inst' }, instEmoji[s.instrument] || '🎸'),
     h('div', { class: 'sr-main' }, h('b', {}, s.title), h('span', {}, s.artist || '—')),
+    hasMine(s) ? h('span', { class: 'tag mine' }, '★ ' + ((S.db.settings.stageName || '').trim() || 'Olden Gray')) : null,
     s.capo ? h('span', { class: 'tag' }, 'Capo ' + s.capo) : null,
     s.instrument !== 'piano' && s.tuningName && !/^Standard/.test(s.tuningName) ? h('span', { class: 'tag t2' }, s.tuningName) : null,
     more);
@@ -372,6 +374,9 @@ export function settingsScreen(root, nav) {
     }
     page.append(card);
 
+    const stageIn = h('input', { value: S.db.settings.stageName || 'Olden Gray', placeholder: 'Olden Gray', onchange: (e) => { S.setSetting('stageName', e.target.value.trim() || 'Olden Gray'); toast('Stage name saved ★'); } });
+    page.append(h('div', { class: 'card form' }, h('h2', {}, '★ Stage name'),
+      field('Your stage name', stageIn, 'Shown on the gold star in every song. Tap it to switch between the original tab and your own version (your key, your chord choices).')));
     page.append(h('div', { class: 'card form' }, h('h2', {}, 'Performance'),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('tapPage', true), onchange: (e) => S.setPref('tapPage', e.target.checked) }), h('span', {}, 'Tap the bottom of the screen to page down (top to page up) while viewing a tab')),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('stage', false), onchange: (e) => S.setPref('stage', e.target.checked) }), h('span', {}, 'Stage mode (dark screen) for tabs')),

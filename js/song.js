@@ -5,6 +5,7 @@ import { TUNINGS, INSTRUMENTS, COMMON_CHORDS, voicing, transposeChord, isChord, 
 import { uid, newTabBlock, newMeasure, emptyCol, resizeStrings, songChords } from './model.js';
 import { chordDiagram, emojiRain, logo } from './art.js';
 import { convertChordSheet } from './importer.js';
+import * as V from './versions.js';
 
 const TECH = ['h', 'p', '/', '\\', 'b', 'r', '~', 'x', '( )', '<>', 'PM', 's', 't'];
 const TECH_HELP = { h: 'Hammer-on', p: 'Pull-off', '/': 'Slide up', '\\': 'Slide down', b: 'Bend', r: 'Release', '~': 'Vibrato', x: 'Muted / dead note', '( )': 'Ghost note', '<>': 'Harmonic', PM: 'Palm mute', s: 'Slide', t: 'Tap' };
@@ -35,17 +36,17 @@ export function songScreen(root, songId, ctx = {}, nav) {
   }
 
   // ---------- toolbar (single row, scrolls horizontally, auto-hides)
+  // The pick toggles the menu bar; it stays until the pick is tapped again (remembered on this device).
   let barTimer = null;
-  function showBar() { screen.classList.add('bar-open'); clearTimeout(barTimer); barTimer = setTimeout(hideBar, 5000); }
-  function hideBar() { screen.classList.remove('bar-open'); }
+  function showBar() { screen.classList.add('bar-open'); handle.setAttribute('aria-label', 'Hide menu'); S.setPref('barPinned', true); }
+  function hideBar() { screen.classList.remove('bar-open'); handle.setAttribute('aria-label', 'Show menu'); S.setPref('barPinned', false); closePop(); }
   function toggleBar() { screen.classList.contains('bar-open') ? hideBar() : showBar(); }
-  topbar.addEventListener('pointerdown', () => { clearTimeout(barTimer); barTimer = setTimeout(hideBar, 6000); });
-  topbar.addEventListener('scroll', () => { clearTimeout(barTimer); barTimer = setTimeout(hideBar, 6000); });
+  topbar.addEventListener('scroll', closePop);
 
   const timerPill = h('button', { class: 'tb timer-pill', type: 'button', title: 'Practice timer (tap to pause)' });
   function buildBar() {
     topbar.innerHTML = '';
-    const tb = (label, ico, fn, title, cls = '') => h('button', { class: 'tb ' + cls, type: 'button', title: title || label, 'aria-label': title || label, onclick: (e) => { e.stopPropagation(); fn(e); showBar(); } }, ico ? icon(ico) : null, label ? h('span', {}, label) : null);
+    const tb = (label, ico, fn, title, cls = '') => h('button', { class: 'tb ' + cls, type: 'button', title: title || label, 'aria-label': title || label, onclick: (e) => { e.stopPropagation(); fn(e); } }, ico ? icon(ico) : null, label ? h('span', {}, label) : null);
     const sep = () => h('span', { class: 'tb-sep' });
     const items = [
       tb('', 'menu', () => window.openDrawer(), 'Menu'),
@@ -71,12 +72,58 @@ export function songScreen(root, songId, ctx = {}, nav) {
       sep(),
       tb('', 'minus', () => transpose(-1), 'Transpose down'), h('span', { class: 'tb-label' }, 'Key ' + (song.transpose ? (song.transpose > 0 ? '+' : '') + song.transpose : '±0')), tb('', 'plus', () => transpose(1), 'Transpose up'),
       sep(),
+      tb(instLabel(), 'music', (e) => instrumentMenu(e.currentTarget), 'Instrument: switch between guitar, ukulele and piano versions', 'inst-btn'),
       tb('Chords', 'grid', toggleStrip, 'Show chord diagrams'),
       tb(S.pref('stage') ? 'Day' : 'Stage', 'moon', () => { S.setPref('stage', !S.pref('stage')); applyStage(); buildBar(); }, 'Stage (dark) mode'),
       tb('Song', 'gear', songSettings, 'Song settings: tuning, capo, instrument'),
-      sep(), timerPill);
+      sep(), timerPill, h('span', { class: 'tb-end' }));
     topbar.append(...items);
     updateTimer();
+  }
+
+  // ---------- versions: instrument menu + stage-name badge
+  const INST = { guitar: ['🎸', 'Guitar'], ukulele: ['🪕', 'Ukulele'], piano: ['🎹', 'Piano'] };
+  const stageName = () => (S.db.settings.stageName || 'Olden Gray').trim() || 'Olden Gray';
+  function instLabel() { return INST[song.instrument][1]; }
+  let pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; document.removeEventListener('pointerdown', popAway, true); } }
+  function popAway(e) { if (pop && !pop.contains(e.target) && !e.target.closest('.inst-btn')) closePop(); }
+  function instrumentMenu(anchor) {
+    if (pop) return closePop();
+    const mine = V.isMine(song);
+    pop = h('div', { class: 'pop-menu', role: 'menu' },
+      h('div', { class: 'pop-title' }, mine ? `${stageName()} version` : 'Instrument'),
+      Object.entries(INST).map(([k, [emo, label]]) => {
+        const exists = V.hasVersion(song, V.versionKey(k, mine));
+        return h('button', { type: 'button', role: 'menuitemradio', class: 'pop-item' + (song.instrument === k ? ' on' : ''), onclick: () => { closePop(); changeVersion(k, mine); } },
+          h('span', { class: 'pop-emo' }, emo), h('span', {}, label),
+          song.instrument === k ? h('span', { class: 'pop-tag' }, '✓') : !exists ? h('span', { class: 'pop-tag new' }, 'make it') : null);
+      }));
+    screen.append(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = r.bottom + 6 + 'px';
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - 228, r.left)) + 'px';
+    setTimeout(() => document.addEventListener('pointerdown', popAway, true), 0);
+  }
+  function changeVersion(inst, mine) {
+    pushUndo();
+    if (auto.on) toggleAuto();
+    const made = V.switchVersion(song, inst, mine);
+    if (made === 'same') return;
+    commit(); cursor = null; renderAll(); renderKeypad(); buildBar();
+    scroll.scrollTop = 0;
+    if (made === 'created') {
+      if (mine) toast(`✨ Made your ${stageName()} version — tap Edit to change the key, chords or anything. The original stays as it was.`, 5000);
+      else toast(inst === 'piano' ? '🎹 Made a piano version — chords & lyrics (moved up for the capo).' : `${INST[inst][0]} Made a ${INST[inst][1].toLowerCase()} version — check it over and edit anything that doesn't sit right.`, 4500);
+    } else toast(mine ? `✨ ${stageName()} version` : `${INST[inst][0]} ${INST[inst][1]}${V.isMine(song) ? '' : ' (original)'}`);
+  }
+  function stageBadge() {
+    const mine = V.isMine(song);
+    return h('button', { type: 'button', class: 'stage-badge' + (mine ? ' on' : ''), title: mine ? 'Back to the original tab' : `Show your ${stageName()} version`,
+      'aria-pressed': mine ? 'true' : 'false', onclick: (e) => { e.stopPropagation(); changeVersion(song.instrument, !mine); } },
+      h('span', { class: 'sb-star', html: '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.6 6 6.4.6-4.9 4.3 1.5 6.3L12 16.4 6.4 19.7l1.5-6.3L3 9.1l6.4-.6z"/></svg>' }),
+      h('span', { class: 'sb-name' }, stageName()),
+      mine ? h('span', { class: 'sb-sub' }, 'my version') : null);
   }
 
   function setMode(m) {
@@ -103,7 +150,8 @@ export function songScreen(root, songId, ctx = {}, nav) {
     const meta = h('div', { class: 'meta-line' + (mode === 'edit' ? ' editable' : ''), onclick: mode === 'edit' ? songSettings : null },
       song.capo ? h('span', { class: 'capo' }, `Capo ${song.capo}`) : null,
       song.instrument !== 'piano' ? h('span', { class: 'tuning' }, `${song.tuningName && song.tuningName !== 'Custom' ? song.tuningName + ' · ' : ''}${stringsTxt}`) : h('span', { class: 'tuning' }, 'Piano · chords'),
-      song.transpose ? h('span', { class: 'tp' }, `Transposed ${song.transpose > 0 ? '+' : ''}${song.transpose}`) : null);
+      song.transpose ? h('span', { class: 'tp' }, `Transposed ${song.transpose > 0 ? '+' : ''}${song.transpose}`) : null,
+      stageBadge());
     scroll.append(meta);
     song.blocks.forEach((b, i) => {
       if (mode === 'edit') scroll.append(addBar(i));
@@ -158,12 +206,13 @@ export function songScreen(root, songId, ctx = {}, nav) {
         const ta = h('textarea', { class: 'chords-input', spellcheck: false, value: b.text, placeholder: '[G]Amazing [C]grace, how [G]sweet the sound\n\nPut chords in [brackets] right before the syllable — or paste chords-over-lyrics and tap Convert.' });
         const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 4 + 'px'; };
         ta.addEventListener('focus', pushUndo);
-        ta.addEventListener('input', () => { b.text = ta.value; grow(); commit(); });
+        const preview = h('div', { class: 'chords-preview', 'aria-label': 'Preview' }, renderChordText(b.text));
+        ta.addEventListener('input', () => { b.text = ta.value; grow(); commit(); preview.replaceChildren(renderChordText(b.text)); });
         el.append(blockTools(b),
           h('div', { class: 'chords-edit-tools' },
             btn('Insert chord', () => chordPicker({ title: 'Insert chord', onPick: (name) => { const p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + `[${name}]` + ta.value.slice(p); b.text = ta.value; commit(); grow(); ta.focus(); ta.selectionStart = ta.selectionEnd = p + name.length + 2; } }), { icon: 'music', cls: 'small' }),
-            btn('Convert chords-over-lyrics', () => { pushUndo(); ta.value = b.text = convertChordSheet(ta.value); commit(); grow(); toast('Converted'); }, { cls: 'small ghost' })),
-          ta);
+            btn('Convert chords-over-lyrics', () => { pushUndo(); ta.value = b.text = convertChordSheet(ta.value); commit(); grow(); preview.replaceChildren(renderChordText(b.text)); toast('Converted'); }, { cls: 'small ghost' })),
+          ta, preview);
         requestAnimationFrame(grow);
       } else el.append(renderChordText(b.text));
     } else if (b.type === 'tab') {
@@ -311,7 +360,6 @@ export function songScreen(root, songId, ctx = {}, nav) {
     if (mode === 'view') {
       const name = (cc && cc.dataset.chord) || (ch && ch.dataset.chord);
       if (name) { showDiagram(showChord(name)); return; }
-      if (screen.classList.contains('bar-open')) { hideBar(); return; }
       if (S.pref('tapPage', true) && !t.closest('button,a,input,textarea')) {
         const y = e.clientY / window.innerHeight;
         if (y > 0.6) scroll.scrollBy({ top: scroll.clientHeight * 0.7, behavior: 'smooth' });
@@ -550,15 +598,19 @@ export function songScreen(root, songId, ctx = {}, nav) {
         btn('Save', () => {
           pushUndo();
           song.title = title.value.trim() || 'Untitled'; song.artist = artist.value.trim();
-          if (instrument !== song.instrument || tuning.length !== song.tuning.length) {
-            song.instrument = instrument;
-            if (instrument === 'piano') { song.blocks = song.blocks.filter(b => b.type !== 'tab'); if (!song.blocks.length) song.blocks.push({ id: uid(), type: 'chords', text: '' }); }
-            else resizeStrings(song, tuning.length);
+          if (instrument !== song.instrument) {
+            // switching instrument = switching to that instrument's version (made automatically the first time)
+            const made = V.switchVersion(song, instrument, V.isMine(song));
+            if (made === 'created' && instrument !== 'piano' && tuning.length === song.tuning.length) {
+              song.tuning = tuning; const tp = TUNINGS[instrument].find(x => x.notes.join() === tuning.join()); song.tuningName = tp ? tp.name : 'Custom';
+            }
+            if (instrument !== 'piano' && made === 'created') song.capo = capo;
+          } else {
+            song.tuning = instrument === 'piano' ? [] : tuning;
+            const p = TUNINGS[instrument].find(x => x.notes.join() === tuning.join());
+            song.tuningName = p ? p.name : 'Custom';
+            song.capo = instrument === 'piano' ? 0 : capo;
           }
-          song.tuning = instrument === 'piano' ? [] : tuning;
-          const p = TUNINGS[instrument].find(x => x.notes.join() === tuning.join());
-          song.tuningName = p ? p.name : 'Custom';
-          song.capo = instrument === 'piano' ? 0 : capo;
           song.beats = +beats.value; song.subdiv = +subdiv.value; song.notes = notes.value;
           commit(); s.close(); cursor = null; renderAll(); renderKeypad(); buildBar();
         }, { cls: 'primary', icon: 'check' })));
@@ -573,7 +625,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
   function setSpeed(d) { song.scrollSpeed = Math.max(4, Math.min(160, (song.scrollSpeed || 20) + d * (song.scrollSpeed >= 40 ? 8 : 4))); commit(); buildBar(); }
   function toggleAuto() {
     auto.on = !auto.on;
-    if (auto.on) { auto.acc = scroll.scrollTop; auto.last = performance.now(); auto.raf = requestAnimationFrame(stepAuto); hideBar(); }
+    if (auto.on) { auto.acc = scroll.scrollTop; auto.last = performance.now(); auto.raf = requestAnimationFrame(stepAuto); }
     else cancelAnimationFrame(auto.raf);
     buildBar();
   }
@@ -628,11 +680,11 @@ export function songScreen(root, songId, ctx = {}, nav) {
 
   // ---------- go
   screen.classList.toggle('editing', mode === 'edit');
+  if (S.pref('barPinned', false)) screen.classList.add('bar-open');
   buildBar();
   renderAll();
   renderKeypad();
   if (mode === 'edit' && song.blocks.length === 1 && song.blocks[0].type === 'tab' && !song.blocks[0].measures.some(m => m.cols.some(c => c.c || c.n.some(Boolean)))) {
-    showBar();
     toast('Tap a faint box above a beat to add a chord, or a string to add a note');
   }
   requestAnimationFrame(() => scroll.focus({ preventScroll: true }));

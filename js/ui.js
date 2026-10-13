@@ -8,6 +8,7 @@ export function h(tag, attrs = {}, ...kids) {
     else if (k === 'style' && typeof v === 'object') for (const [sk, sv] of Object.entries(v)) { if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv; }
     else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v);
     else if (k === 'html') el.innerHTML = v;
+    else if (k === 'value') el.value = v; // textareas ignore the value attribute
     else if (k in el && typeof v !== 'string') el[k] = v;
     else el.setAttribute(k, v === true ? '' : v);
   }
@@ -59,6 +60,7 @@ export function btn(label, onclick, opts = {}) {
 }
 
 export function toast(msg, ms = 2600) {
+  document.querySelectorAll('.toast').forEach(o => o.remove());
   const t = h('div', { class: 'toast' }, msg);
   document.body.append(t);
   requestAnimationFrame(() => t.classList.add('show'));
