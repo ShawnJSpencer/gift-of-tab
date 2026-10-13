@@ -203,10 +203,32 @@ export function importSheet(nav) {
   const title = h('input', { placeholder: 'Song title' }), artist = h('input', { placeholder: 'Artist' });
   const inst = h('select', {}, h('option', { value: 'auto' }, 'Detect automatically'), h('option', { value: 'guitar' }, 'Guitar'), h('option', { value: 'ukulele' }, 'Ukulele'), h('option', { value: 'piano' }, 'Piano (chords)'));
   ta.addEventListener('input', () => { const g = guessMeta(ta.value); if (g.title && !title.value) title.value = g.title; if (g.artist && !artist.value) artist.value = g.artist; });
-  const paste = btn('Paste from clipboard', async () => { try { ta.value = await navigator.clipboard.readText(); ta.dispatchEvent(new Event('input')); } catch { toast('Tap in the box and paste instead'); ta.focus(); } }, { cls: 'ghost small', icon: 'copy' });
+  const paste = btn('Paste text', async () => { try { ta.value = await navigator.clipboard.readText(); ta.dispatchEvent(new Event('input')); } catch { toast('Tap in the box and paste instead'); ta.focus(); } }, { cls: 'ghost small', icon: 'copy' });
+  const pdfNote = h('p', { class: 'hint pdf-note' });
+  const inp = h('input', { type: 'file', accept: 'application/pdf,.pdf', class: 'hidden', onchange: async () => {
+      const f = inp.files[0]; if (!f) return;
+      pdfBtn.disabled = true; pdfNote.textContent = 'Reading the PDF…';
+      try {
+        const { pdfToTabText } = await import('./pdfimport.js');
+        const r = await pdfToTabText(f, (p, n) => { pdfNote.textContent = `Reading page ${p} of ${n}…`; });
+        if (!r.text.trim()) {
+          pdfNote.textContent = r.scanned ? 'This PDF is a scan (pictures of pages, not text), so it can\'t be read yet.' : 'No tab or text was found in this PDF.';
+        } else {
+          ta.value = r.text;
+          if (r.title && !title.value) title.value = r.title;
+          if (r.artist && !artist.value) artist.value = r.artist;
+          ta.dispatchEvent(new Event('input'));
+          if (!title.value) title.value = f.name.replace(/\.pdf$/i, '');
+          pdfNote.textContent = `Read ${r.pages} page${r.pages === 1 ? '' : 's'}` + (r.staves ? ` and ${r.staves} tab line${r.staves === 1 ? '' : 's'}` : '') + '. Check it below, fix anything odd, then tap Import.' +
+            (r.scanned ? ` (${r.scanned} page${r.scanned === 1 ? ' was a scan' : 's were scans'} and couldn't be read.)` : '');
+        }
+      } catch (e) { console.error(e); pdfNote.textContent = 'Sorry — that PDF couldn\'t be opened (' + (e.message || e) + ').'; }
+      pdfBtn.disabled = false; inp.value = '';
+    } });
+  const pdfBtn = btn('Open a PDF', () => inp.click(), { cls: 'small', icon: 'import' });
   const s = sheet('Import a tab', h('div', { class: 'form' },
-    h('p', { class: 'hint' }, 'Copy the tab text from Ultimate Guitar, Songsterr, Chordify or any site, then paste it here. Chords, tab lines, lyrics and section names are turned into an editable tab you can customise.'),
-    paste, ta,
+    h('p', { class: 'hint' }, 'Paste tab text copied from Ultimate Guitar, Songsterr or any site — or open a PDF tab (Guitar Pro, Songsterr and other downloaded/printed PDFs). Chords, six-line tab, lyrics and section names become an editable tab.'),
+    h('div', { class: 'row' }, paste, pdfBtn, inp), pdfNote, ta,
     h('div', { class: 'two' }, field('Title', title), field('Artist', artist)),
     field('Instrument', inst),
     h('div', { class: 'row end' }, btn('Import', () => {

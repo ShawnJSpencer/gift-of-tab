@@ -145,7 +145,7 @@ export function importText(raw, opts = {}) {
     let m;
     if ((m = t.match(/^\{(?:title|t):\s*(.+)\}$/i))) { song.title ||= m[1]; continue; }
     if ((m = t.match(/^\{(?:artist|subtitle|st):\s*(.+)\}$/i))) { song.artist ||= m[1]; continue; }
-    if ((m = t.match(/^\{?capo:?\s*(\d+)/i)) || (m = t.match(/^capo\s*(?:on|at)?\s*(\d+)/i))) { song.capo = +m[1]; continue; }
+    if ((m = t.match(/^\{?capo:?\s*(\d+)/i)) || (m = t.match(/^capo\s*(?:on|at)?\s*(?:fret)?\s*(\d+)/i))) { song.capo = +m[1]; continue; }
     if ((m = t.match(/^\{?tuning:?\s*(.+?)\}?$/i))) {
       const v = m[1].trim();
       const preset = [...TUNINGS.guitar, ...TUNINGS.ukulele].find(p => p.name.toLowerCase().startsWith(v.toLowerCase().replace(/\s*tuning$/, '')));
