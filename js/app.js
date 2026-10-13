@@ -20,7 +20,7 @@ window.openDrawer = () => {
   drawer.innerHTML = '';
   const item = (ico, label, fn) => h('button', { type: 'button', class: 'dr-item', onclick: () => { closeDrawer(); fn(); } }, icon(ico), h('span', {}, label));
   const pls = S.playlists();
-  drawer.append(
+  drawer.append(...[
     h('div', { class: 'dr-logo' }, logo('md')),
     item('home', 'Home', () => nav('#/')),
     item('plus', 'New tab', () => newSongSheet(nav)),
@@ -30,7 +30,7 @@ window.openDrawer = () => {
     item('cloud', 'Sync & settings', () => nav('#/settings')),
     pls.length ? h('div', { class: 'dr-label' }, 'Playlists') : null,
     ...pls.map(p => item('list', p.name, () => nav('#/playlist/' + p.id))),
-    h('div', { class: 'dr-foot' }, Sync.isConnected() ? '☁️ Synced via GitHub' : 'Not syncing yet'));
+    h('div', { class: 'dr-foot' }, Sync.isConnected() ? '☁️ Synced via GitHub' : 'Not syncing yet')].filter(Boolean)); // (a bare null would show as the word "null")
   document.body.classList.add('drawer-open');
 };
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
@@ -56,6 +56,7 @@ function route() {
   const q = new URLSearchParams(qs || '');
   const parts = path.split('/').filter(Boolean);
   document.body.dataset.screen = parts[0] || 'home';
+  window.setTopColor('#EEF5F1');
   setWake(parts[0] === 'song');
   if (parts[0] === 'song') cleanup = songScreen(app, parts[1], { pl: q.get('pl'), edit: q.get('edit') === '1' }, nav);
   else if (parts[0] === 'playlist') cleanup = playlistScreen(app, parts[1], nav);
@@ -63,6 +64,10 @@ function route() {
   else if (parts[0] === 'settings') cleanup = settingsScreen(app, nav);
   else cleanup = homeScreen(app, nav);
 }
+// Safari tints/fades the area under the status bar to match the page — keep that colour in step
+// with what's actually at the top of the screen (menu bar, tab page, or home).
+const themeMeta = document.querySelector('meta[name="theme-color"]');
+window.setTopColor = (c) => { document.documentElement.style.backgroundColor = c; if (themeMeta) themeMeta.setAttribute('content', c); };
 window.addEventListener('hashchange', route);
 route();
 

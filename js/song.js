@@ -38,8 +38,9 @@ export function songScreen(root, songId, ctx = {}, nav) {
   // ---------- toolbar (single row, scrolls horizontally, auto-hides)
   // The pick toggles the menu bar; it stays until the pick is tapped again (remembered on this device).
   let barTimer = null;
-  function showBar() { screen.classList.add('bar-open'); handle.setAttribute('aria-label', 'Hide menu'); S.setPref('barPinned', true); }
-  function hideBar() { screen.classList.remove('bar-open'); handle.setAttribute('aria-label', 'Show menu'); S.setPref('barPinned', false); closePop(); }
+  function topColor() { window.setTopColor(screen.classList.contains('bar-open') ? '#614C49' : (S.pref('stage') ? '#1E1817' : '#FFFBF4')); }
+  function showBar() { screen.classList.add('bar-open'); handle.setAttribute('aria-label', 'Hide menu'); S.setPref('barPinned', true); topColor(); }
+  function hideBar() { screen.classList.remove('bar-open'); handle.setAttribute('aria-label', 'Show menu'); S.setPref('barPinned', false); closePop(); topColor(); }
   function toggleBar() { screen.classList.contains('bar-open') ? hideBar() : showBar(); }
   topbar.addEventListener('scroll', closePop);
 
@@ -74,9 +75,9 @@ export function songScreen(root, songId, ctx = {}, nav) {
       sep(),
       tb(instLabel(), 'music', (e) => instrumentMenu(e.currentTarget), 'Instrument: switch between guitar, ukulele and piano versions', 'inst-btn'),
       tb('Chords', 'grid', toggleStrip, 'Show chord diagrams'),
-      tb(S.pref('stage') ? 'Day' : 'Stage', 'moon', () => { S.setPref('stage', !S.pref('stage')); applyStage(); buildBar(); }, 'Stage (dark) mode'),
+      tb(S.pref('stage') ? 'Day' : 'Stage', 'moon', () => { S.setPref('stage', !S.pref('stage')); applyStage(); buildBar(); topColor(); }, 'Stage (dark) mode'),
       tb('Song', 'gear', songSettings, 'Song settings: tuning, capo, instrument'),
-      sep(), timerPill, h('span', { class: 'tb-end' }));
+      sep(), timerPill);
     topbar.append(...items);
     updateTimer();
   }
@@ -681,6 +682,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
   // ---------- go
   screen.classList.toggle('editing', mode === 'edit');
   if (S.pref('barPinned', false)) screen.classList.add('bar-open');
+  topColor();
   buildBar();
   renderAll();
   renderKeypad();

@@ -330,10 +330,10 @@ html.stage .pick-dot svg { fill: var(--amber); }
 .menu-handle.met .pick-dot svg { fill: var(--teal); }
 .bar-open .menu-handle { opacity: 0; pointer-events: none; }
 .topbar { position: absolute; z-index: 40; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 2px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
-  padding: calc(var(--st) + 6px) calc(var(--sr) + 8px) 6px calc(var(--sl) + 8px); background: rgba(97, 76, 73, .94); color: #FFF5EA; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  transform: translateY(-105%); transition: transform .22s ease; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+  padding: calc(var(--st) + 6px) calc(var(--sr) + 8px) 6px calc(var(--sl) + 8px); background: #614C49; color: #FFF5EA;
+  transform: translateY(-105%); transition: transform .22s ease, box-shadow .22s; box-shadow: none; }
 .topbar::-webkit-scrollbar { display: none; }
-.bar-open .topbar { transform: none; }
+.bar-open .topbar { transform: none; box-shadow: 0 4px 14px rgba(0,0,0,.16); }
 .tb { flex: none; display: inline-flex; align-items: center; gap: .35rem; border: 0; background: transparent; color: inherit; border-radius: 10px; height: 42px; min-width: 42px; padding: 0 .55rem; font-weight: 800; font-size: 14px; justify-content: center; }
 .tb:active { background: rgba(255,255,255,.12); }
 .tb .ic { width: 21px; height: 21px; }
@@ -402,11 +402,16 @@ html.stage .cd-pop-date { color: var(--brown); }
 
 /* ---------- pinned menu bar: pick stays visible and toggles it */
 .menu-handle { z-index: 45; transition: opacity .2s, transform .2s; }
-.bar-open .menu-handle { opacity: 1; pointer-events: auto; }
-.bar-open .menu-handle .pick-dot svg { fill: var(--amber); transform: rotate(180deg); transition: transform .25s; }
-.tb-end { flex: none; width: calc(var(--sr) + 46px); height: 1px; }
-.bar-open .menu-handle { background: rgba(97,76,73,.96); border-radius: 50%; box-shadow: -10px 0 14px rgba(97,76,73,.9); }
+.bar-open .menu-handle { opacity: .85; pointer-events: auto; }
+.menu-handle .pick-dot svg { transition: transform .25s; }
+.bar-open .menu-handle .pick-dot svg { transform: rotate(180deg); }
+/* the pick rides down with the menu and sits just below it, on the page */
+.menu-handle { transition: top .22s ease, opacity .2s; }
+.bar-open .menu-handle { top: calc(var(--st) + 60px); }
+.bar-open .menu-handle .pick-dot svg { fill: var(--rust); }
+html.stage .bar-open .menu-handle .pick-dot svg { fill: var(--amber); }
 .bar-open .song-scroll { padding-top: calc(var(--st) + 66px); }
+.bar-open .song-head { margin-right: 2.6rem; }
 .song-scroll { transition: padding-top .22s ease; }
 
 /* ---------- instrument pop-up */
