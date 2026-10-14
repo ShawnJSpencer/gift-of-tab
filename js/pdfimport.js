@@ -6,6 +6,7 @@
 // chord name and lyric sits; each number is matched to the nearest string line and beat. Plain text
 // (chord sheets, ASCII tabs) is rebuilt line by line keeping its spacing.
 import { isChord, noteIndex } from './theory.js';
+import { UG, FONT } from './glyphs.js';
 
 let lib = null;
 async function pdfjs() {
@@ -19,7 +20,7 @@ async function pdfjs() {
 const FRET = /^(\(?\d{1,2}\)?|[xX]|<\d{1,2}>|\d{1,2}[hpb\/\\]\d{1,2})$/;
 const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 
-export async function pdfToTabText(file, onProgress) {
+export async function pdfToTabText(file, onProgress, opts = {}) {
   const L = await pdfjs();
   const task = L.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
   const doc = await task.promise;
@@ -30,13 +31,24 @@ export async function pdfToTabText(file, onProgress) {
     onProgress && onProgress(p, pages);
     const page = await doc.getPage(p);
     const base = page.getViewport({ scale: 1 });
-    const vp = page.getViewport({ scale: Math.min(3, 1600 / base.width) });
+    const vp = page.getViewport({ scale: Math.min(3, (opts.width || 1600) / base.width) });
     const tc = await page.getTextContent();
     const items = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp, i));
     // (pages with no text may still hold tab drawn as a picture — read those optically)
     if (p === 1) meta = { ...meta, ...takeTitle(items, vp.height) };
-    const img = await raster(page, vp);
-    const res = analysePage(items, img);
+    let img = await raster(page, vp);
+    let res = analysePage(items.map(i => ({ ...i })), img);
+    // tab drawn as pictures reads most reliably when the strings are ~28px apart — re-read finer if needed
+    if (res.ocr && res.sp && Math.abs(res.sp - 28) > 1) {
+      const k = Math.min(28 / res.sp, 2600 / vp.width);
+      if (Math.abs(k - 1) > 0.03) {
+        const vp2 = page.getViewport({ scale: vp.scale * k });
+        img = await raster(page, vp2);
+        const fresh = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp2, i));
+        if (p === 1) takeTitle(fresh, vp2.height);
+        res = analysePage(fresh, img);
+      }
+    }
     staves += res.staves;
     if (items.length < 3 && !res.staves) scanned++;
     if (res.ocr) meta.ocr = true;
@@ -60,10 +72,14 @@ async function raster(page, vp) {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   await page.render({ canvas: c, canvasContext: ctx, viewport: vp }).promise;
   const d = ctx.getImageData(0, 0, c.width, c.height).data;
-  const W = c.width, H = c.height, dark = new Uint8Array(W * H);
-  for (let k = 0, j = 0; k < d.length; k += 4, j++) dark[j] = (d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11) < 205 ? 1 : 0; // thin grey staff lines count too
+  const W = c.width, H = c.height, dark = new Uint8Array(W * H), ink = new Uint8Array(W * H);
+  for (let k = 0, j = 0; k < d.length; k += 4, j++) {
+    const lum = d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11;
+    dark[j] = lum < 228 ? 1 : 0; // thin, faint grey staff lines count too
+    ink[j] = lum < 140 ? 1 : 0;  // solid ink only — keeps numbers apart from brackets and lines
+  }
   c.width = c.height = 0; // free memory on iPad
-  return { W, H, dark };
+  return { W, H, dark, ink };
 }
 
 // ---------- staff + bar detection
@@ -214,7 +230,7 @@ function analysePage(items, img) {
   for (const nst of notation) for (const it of items) if (!it.used && inBand(nst, it, nst.sp * 2)) it.used = true;
   for (const ln of textLines(items)) segments.push(ln);
   segments.sort((a, b) => a.y - b.y);
-  return { text: segments.map(s => s.text).join('\n'), staves: tabs.length, ocr: usedOcr };
+  return { text: segments.map(s => s.text).join('\n'), staves: tabs.length, ocr: usedOcr, sp: median(tabs.map(t => t.sp)) };
 }
 
 function nearest(cols, x, sp) {
@@ -340,6 +356,10 @@ const TEMPLATE_CACHE = {};
 function templates(fonts = SANS) {
   const key = fonts.join();
   if (TEMPLATE_CACHE[key]) return TEMPLATE_CACHE[key];
+  if (fonts === SANS) { // built-in shapes: identical on every device
+    const dec = (s) => Float32Array.from(s, ch => (+ch) / 9);
+    return (TEMPLATE_CACHE[key] = [...UG, ...FONT].map(([ch, v]) => ({ ch, v: dec(v) })));
+  }
   const TEMPLATES = TEMPLATE_CACHE[key] = [];
   const c = document.createElement('canvas'); c.width = 90; c.height = 110;
   const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -376,17 +396,19 @@ function normGlyph(get, bx, by, w, h) {
 }
 
 // Count closed loops in a glyph (6 has one, 5 has none, 8 has two) — a reliable tie-breaker.
-function holes(get, w, h) {
+function holes(get, w, h) { return holeBoxes(get, w, h).length; }
+// Enclosed background regions of a glyph, with their boxes (relative to the glyph height).
+function holeBoxes(get, w, h) {
   const seen = new Uint8Array((w + 2) * (h + 2)), W2 = w + 2;
   const bg = (x, y) => x < 0 || y < 0 || x >= w || y >= h || !get(x, y);
-  let count = 0;
+  const out = [];
   for (let sy = -1; sy <= h; sy++) for (let sx = -1; sx <= w; sx++) {
     const i0 = (sy + 1) * W2 + sx + 1;
     if (seen[i0] || !bg(sx, sy)) continue;
-    let size = 0, edge = false; const st = [[sx, sy]]; seen[i0] = 1;
+    let size = 0, edge = false, y0 = h, y1 = -1; const st = [[sx, sy]]; seen[i0] = 1;
     while (st.length) {
       const [x, y] = st.pop(); size++;
-      if (x < 0 || y < 0 || x >= w || y >= h) edge = true;
+      if (x < 0 || y < 0 || x >= w || y >= h) edge = true; else { if (y < y0) y0 = y; if (y > y1) y1 = y; }
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, ny = y + dy;
         if (nx < -1 || ny < -1 || nx > w || ny > h) continue;
@@ -394,9 +416,9 @@ function holes(get, w, h) {
         if (!seen[j] && bg(nx, ny)) { seen[j] = 1; st.push([nx, ny]); }
       }
     }
-    if (!edge && size >= Math.max(2, w * h * 0.012)) count++;
+    if (!edge && size >= Math.max(2, w * h * 0.012)) out.push({ top: y0 / h, bot: (y1 + 1) / h, size });
   }
-  return count;
+  return out;
 }
 const LOOPS = { 0: '123457', 1: '0469', 2: '8' }; // digits allowed for each loop count (4 can be open or closed)
 
@@ -405,6 +427,7 @@ function classify(v, loops, fonts) {
   let best = null, bestD = Infinity;
   for (const t of templates(fonts)) {
     if (allow && /\d/.test(t.ch) && !allow.includes(t.ch)) continue;
+    if (t.ch === 'x' && loops) continue; // an X has no loops
     let d = 0;
     for (let i = 0; i < v.length; i++) d += Math.abs(v[i] - t.v[i]);
     if (d < bestD) { bestD = d; best = t.ch; }
@@ -412,7 +435,8 @@ function classify(v, loops, fonts) {
   return { ch: best, d: bestD };
 }
 
-function ocrStaff({ W, dark }, st, bars, x0, x1) {
+function ocrStaff({ W, dark: lineInk, ink }, st, bars, x0, x1) {
+  const dark = ink || lineInk;
   const sp = st.sp;
   const top = Math.max(0, Math.floor(st.top - sp * 0.7)), bot = Math.ceil(st.bot + sp * 0.7);
   const left = Math.max(0, Math.floor(x0)), right = Math.min(W - 1, Math.ceil(x1));
@@ -420,10 +444,19 @@ function ocrStaff({ W, dark }, st, bars, x0, x1) {
   const m = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = dark[(top + y) * W + left + x];
   const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h ? m[y * w + x] : 0);
-  // remove string lines (keep pixels that continue above/below = digit strokes)
+  // remove string lines: only long horizontal runs (a digit's own strokes — like the waist of an 8 — are short)
+  const minRun = Math.max(6, sp * 0.9);
   for (const l of st.lines) {
-    const a = Math.round(l.y0) - top - 1, b = Math.round(l.y1) - top + 1;
-    for (let x = 0; x < w; x++) if (!at(x, a) || !at(x, b)) for (let y = a + 1; y < b; y++) { if (!at(x, a) && !at(x, b)) m[y * w + x] = 0; }
+    for (let y = Math.round(l.y0) - top - 1; y <= Math.round(l.y1) - top + 1; y++) {
+      if (y < 0 || y >= h) continue;
+      let x = 0;
+      while (x < w) {
+        if (!m[y * w + x]) { x++; continue; }
+        let e = x; while (e < w && m[y * w + e]) e++;
+        if (e - x >= minRun) for (let k = x; k < e; k++) m[y * w + k] = 0;
+        x = e;
+      }
+    }
   }
   // remove bar lines
   for (const bx of bars) {
@@ -458,16 +491,42 @@ function ocrStaff({ W, dark }, st, bars, x0, x1) {
     const li = Math.round((c.cy - st.top) / sp);
     if (li < 0 || li >= st.n || Math.abs(c.cy - (st.top + li * sp)) > sp * 0.42) continue;
     const inC = (x, y) => lab[(c.y0 + y) * w + c.x0 + x] === c.id;
-    const r = classify(normGlyph((x, y) => lab[y * w + x] === c.id, c.x0, c.y0, c.w, c.h), holes(inC, c.w, c.h));
-    if (!/\d/.test(r.ch) || r.d > GRID * GRID * 0.32) continue;
-    glyphs.push({ li, x0: left + c.x0, x1: left + c.x1, ch: r.ch });
+    const v = normGlyph((x, y) => lab[y * w + x] === c.id, c.x0, c.y0, c.w, c.h);
+    const hb = holeBoxes(inC, c.w, c.h);
+    const r = classify(v, hb.length);
+    if (!/[\dx]/.test(r.ch) || r.d > GRID * GRID * 0.32) continue;
+    let ch = r.ch;
+    // shape rules that don't depend on fonts: where the loop sits tells 0, 6 and 9 apart
+    if (hb.length === 1 && /[0469]/.test(ch)) {
+      const hl = hb[0], tall = hl.bot - hl.top, mid = (hl.top + hl.bot) / 2;
+      if (tall >= 0.5) {
+        // a 0 is empty in the middle; an 8 whose waist leaked still has ink at its centre
+        let ink = 0, n = 0;
+        for (let y = Math.floor(c.h * 0.4); y <= Math.ceil(c.h * 0.6); y++) for (let x = Math.floor(c.w * 0.38); x <= Math.ceil(c.w * 0.62); x++) { n++; ink += inC(x, y) ? 1 : 0; }
+        ch = ink / n > 0.45 ? '8' : '0';
+      }
+      else if (mid > 0.56) ch = '6';
+      else if (ch === '0' || ch === '6') ch = c.w / c.h < 0.62 && mid < 0.45 ? '9' : ch;
+    } else if (hb.length >= 2) ch = '8';
+    glyphs.push({ li, x0: left + c.x0, x1: left + c.x1, ch, v, loops: Math.min(2, hb.length) });
   }
+  // the same shape in one tab line must read the same: let near-identical glyphs vote
+  for (const g of glyphs) {
+    const votes = {};
+    for (const o of glyphs) {
+      if (o.loops !== g.loops) continue; // never let a 0 outvote an 8 (different number of loops)
+      let d = 0; for (let i = 0; i < g.v.length; i++) d += Math.abs(g.v[i] - o.v[i]);
+      if (d < GRID * GRID * 0.05) votes[o.ch] = (votes[o.ch] || 0) + 1;
+    }
+    g.vote = Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0];
+  }
+  for (const g of glyphs) g.ch = g.vote;
   // join neighbouring digits on the same string (e.g. 1 + 2 → 12)
   glyphs.sort((a, b) => a.li - b.li || a.x0 - b.x0);
   const notes = [];
   for (const g of glyphs) {
     const last = notes[notes.length - 1];
-    if (last && last.li === g.li && g.x0 - last.x1 <= H * 0.35 && last.t.length < 2) { last.t += g.ch; last.x1 = g.x1; }
+    if (last && last.li === g.li && g.x0 - last.x1 <= H * 0.35 && last.t.length < 2 && g.ch !== 'x' && last.t !== 'x') { last.t += g.ch; last.x1 = g.x1; }
     else notes.push({ li: g.li, x0: g.x0, x1: g.x1, t: g.ch });
   }
   return notes.map(n => ({ x: (n.x0 + n.x1) / 2, li: n.li, t: n.t }));
@@ -594,3 +653,4 @@ function findSections({ W, dark }, st, x0, x1, prevBot) {
   }
   return found;
 }
+
