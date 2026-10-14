@@ -150,7 +150,11 @@ export function importText(raw, opts = {}) {
       const v = m[1].trim();
       const preset = [...TUNINGS.guitar, ...TUNINGS.ukulele].find(p => p.name.toLowerCase().startsWith(v.toLowerCase().replace(/\s*tuning$/, '')));
       const notes = v.replace(/[,\s]+/g, ' ').trim().split(' ');
-      if (notes.length >= 4 && notes.every(n => noteIndex(n) !== undefined)) { song.tuning = notes; song.tuningName = 'Custom'; tuningSet = true; }
+      if (notes.length >= 4 && notes.every(n => noteIndex(n) !== undefined)) {
+        song.tuning = notes; tuningSet = true;
+        const p = [...TUNINGS.guitar, ...TUNINGS.ukulele].find(t => t.notes.length === notes.length && t.notes.every((x, k) => noteIndex(x) === noteIndex(notes[k])));
+        song.tuningName = p ? p.name : 'Custom';
+      }
       else if (/^e\s*standard|^standard/i.test(v)) { tuningSet = true; }
       else if (preset) { song.tuning = preset.notes.slice(); song.tuningName = preset.name; tuningSet = true; }
       continue;

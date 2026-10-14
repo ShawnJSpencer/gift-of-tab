@@ -214,7 +214,7 @@ export function importSheet(nav) {
         const { pdfToTabText } = await import('./pdfimport.js');
         const r = await pdfToTabText(f, (p, n) => { pdfNote.textContent = `Reading page ${p} of ${n}…`; });
         if (!r.text.trim()) {
-          pdfNote.textContent = r.scanned ? 'This PDF is a scan (pictures of pages, not text), so it can\'t be read yet.' : 'No tab or text was found in this PDF.';
+          pdfNote.textContent = r.scanned ? 'Couldn\'t find any tab in this PDF — it may be a photo or a blurry scan.' : 'No tab or text was found in this PDF.';
         } else {
           ta.value = r.text;
           if (r.title && !title.value) title.value = r.title;
@@ -222,7 +222,8 @@ export function importSheet(nav) {
           ta.dispatchEvent(new Event('input'));
           if (!title.value) title.value = f.name.replace(/\.pdf$/i, '');
           pdfNote.textContent = `Read ${r.pages} page${r.pages === 1 ? '' : 's'}` + (r.staves ? ` and ${r.staves} tab line${r.staves === 1 ? '' : 's'}` : '') + '. Check it below, fix anything odd, then tap Import.' +
-            (r.scanned ? ` (${r.scanned} page${r.scanned === 1 ? ' was a scan' : 's were scans'} and couldn't be read.)` : '');
+            (r.ocr ? ' Some of the tab was drawn as pictures and read by shape — give the numbers a quick check.' : '') +
+            (r.scanned ? ` (${r.scanned} page${r.scanned === 1 ? '' : 's'} couldn't be read.)` : '');
         }
       } catch (e) { console.error(e); pdfNote.textContent = 'Sorry — that PDF couldn\'t be opened (' + (e.message || e) + ').'; }
       pdfBtn.disabled = false; inp.value = '';

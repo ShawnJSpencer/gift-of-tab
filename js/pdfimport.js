@@ -33,11 +33,13 @@ export async function pdfToTabText(file, onProgress) {
     const vp = page.getViewport({ scale: Math.min(3, 1600 / base.width) });
     const tc = await page.getTextContent();
     const items = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp, i));
-    if (items.length < 3) { scanned++; page.cleanup(); continue; }
-    if (p === 1) meta = takeTitle(items, vp.height);
+    // (pages with no text may still hold tab drawn as a picture — read those optically)
+    if (p === 1) meta = { ...meta, ...takeTitle(items, vp.height) };
     const img = await raster(page, vp);
     const res = analysePage(items, img);
     staves += res.staves;
+    if (items.length < 3 && !res.staves) scanned++;
+    if (res.ocr) meta.ocr = true;
     parts.push(res.text);
     page.cleanup();
   }
@@ -59,7 +61,7 @@ async function raster(page, vp) {
   await page.render({ canvas: c, canvasContext: ctx, viewport: vp }).promise;
   const d = ctx.getImageData(0, 0, c.width, c.height).data;
   const W = c.width, H = c.height, dark = new Uint8Array(W * H);
-  for (let k = 0, j = 0; k < d.length; k += 4, j++) dark[j] = (d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11) < 160 ? 1 : 0;
+  for (let k = 0, j = 0; k < d.length; k += 4, j++) dark[j] = (d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11) < 205 ? 1 : 0; // thin grey staff lines count too
   c.width = c.height = 0; // free memory on iPad
   return { W, H, dark };
 }
@@ -133,6 +135,7 @@ function analysePage(items, img) {
   const tabs = staffs.filter(s => s.n === 6 || s.n === 4);
   const notation = staffs.filter(s => s.n === 5 || s.n > 6);
   const segments = [];
+  let usedOcr = false, prevBot = null;
 
   for (const st of tabs) {
     const { x0, x1, bars } = findBars(img, st);
@@ -164,6 +167,8 @@ function analysePage(items, img) {
         lyrics.push({ x: it.x, t: it.s.trim() }); it.used = true;
       }
     }
+    let usedOcrHere = false;
+    if (!notes.length) { notes.push(...ocrStaff(img, st, bars, x0, x1)); if (notes.length) usedOcr = usedOcrHere = true; }
     if (!notes.length) continue;
     // beats: notes that line up vertically
     notes.sort((a, b) => a.x - b.x);
@@ -182,7 +187,7 @@ function analysePage(items, img) {
     const gaps = [];
     for (let k = 1; k < cols.length; k++) gaps.push(cols[k].x - cols[k - 1].x);
     const unit = Math.max(sp * 0.9, median(gaps.filter(g => g > sp * 0.5)) || sp * 1.5);
-    const measures = [];
+    const measures = [], starts = [];
     for (let k = 0; k < edges.length - 1; k++) {
       const inM = cols.filter(c => c.x > edges[k] && c.x < edges[k + 1]);
       if (!inM.length) continue;
@@ -191,15 +196,25 @@ function analysePage(items, img) {
         if (idx) { const extra = Math.min(3, Math.max(0, Math.round((c.x - inM[idx - 1].x) / unit) - 1)); for (let e = 0; e < extra; e++) out.push(null); }
         out.push(c);
       });
-      measures.push(out);
+      measures.push(out); starts.push(edges[k]);
     }
-    segments.push({ y: st.top, text: '\n' + staffToAscii(st.n, measures, tuning) + '\n' });
+    // section names drawn in the picture (Intro, Verse 1, Chorus…) — may start mid-line
+    const labels = usedOcrHere ? findSections(img, st, x0, x1, prevBot) : [];
+    let text = '', from = 0;
+    const cuts = labels.map(l => ({ ...l, k: Math.max(0, starts.filter(sx => sx <= l.x + sp).length - 1) })).sort((a, b) => a.k - b.k);
+    for (const c of cuts) {
+      if (c.k > from) { text += '\n' + staffToAscii(st.n, measures.slice(from, c.k), tuning) + '\n'; from = c.k; }
+      text += '\n[' + c.name + ']\n';
+    }
+    text += '\n' + staffToAscii(st.n, measures.slice(from), tuning) + '\n';
+    segments.push({ y: st.top, text });
+    prevBot = st.bot;
   }
   // standard notation is skipped — its symbols aren't useful as text
   for (const nst of notation) for (const it of items) if (!it.used && inBand(nst, it, nst.sp * 2)) it.used = true;
   for (const ln of textLines(items)) segments.push(ln);
   segments.sort((a, b) => a.y - b.y);
-  return { text: segments.map(s => s.text).join('\n'), staves: tabs.length };
+  return { text: segments.map(s => s.text).join('\n'), staves: tabs.length, ocr: usedOcr };
 }
 
 function nearest(cols, x, sp) {
@@ -278,6 +293,7 @@ function textLines(items) {
     if (!/[A-Za-z0-9]/.test(s)) continue;
     if (/^\s*(page\s*)?\d+\s*(\/|of)\s*\d+\s*$/i.test(s) || /^\s*\d{1,3}\s*$/.test(s)) continue; // page numbers
     if (/https?:|www\.|\.com\b|ultimate-guitar|songsterr|©|copyright/i.test(s)) continue;
+    if (/^\s*\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}/.test(s)) continue; // print date header
     out.push({ y: r.y, text: s });
   }
   return out;
@@ -303,9 +319,278 @@ function takeTitle(items, H) {
   const titleIt = tItems.filter(i => Math.abs(i.base - firstBase) < maxFs * 0.5);
   titleIt.forEach(i => { i.used = true; });
   const res = { title: titleIt.map(i => i.s.trim()).join(' ').replace(/\s+/g, ' ') };
+  const sub = top.filter(i => !i.used && i.base > firstBase && i.base < firstBase + maxFs * 2.2 && i.fs >= maxFs * 0.5).sort((a, b) => a.base - b.base);
+  if (sub.length && !/^(tuning|capo|key|tempo)/i.test(sub[0].s.trim())) { const b0 = sub[0].base; const art = sub.filter(i => Math.abs(i.base - b0) < maxFs * 0.4); res.artist = art.map(i => i.s.trim()).join(' '); art.forEach(i => { i.used = true; }); }
   for (const it of top) {
+    if (res.artist) break;
     const m = it.s.trim().match(/^(?:(?:words\s*(?:&|and)\s*)?music\s+by|by|artist:)\s+(.+)$/i);
     if (m && !it.used) { res.artist = m[1]; it.used = true; break; }
   }
   return res;
+}
+
+// ================= Reading tab drawn as pictures =================
+// Some PDFs (e.g. Ultimate Guitar "Official" tabs, clean scans) contain the tab as an image, so there is
+// no text to read. We read the digits optically: remove the string and bar lines, cut out each remaining
+// shape, and compare it with the digits 0–9 drawn in common fonts.
+const GRID = 16;
+const SANS = ['Arial', 'Helvetica', 'Helvetica Neue', 'Liberation Sans', 'DejaVu Sans', 'Verdana', 'sans-serif'];
+const SERIF = ['Times New Roman', 'Times', 'Georgia', 'Liberation Serif', 'DejaVu Serif', 'serif'];
+const TEMPLATE_CACHE = {};
+function templates(fonts = SANS) {
+  const key = fonts.join();
+  if (TEMPLATE_CACHE[key]) return TEMPLATE_CACHE[key];
+  const TEMPLATES = TEMPLATE_CACHE[key] = [];
+  const c = document.createElement('canvas'); c.width = 90; c.height = 110;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  const chars = '0123456789()/\\TABH';  // letters are there so the TAB sign isn't mistaken for digits
+  for (const f of fonts) for (const wgt of ['bold', 'normal']) for (const ch of chars) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 90, 110);
+    ctx.fillStyle = '#000'; ctx.font = `${wgt} 72px "${f}"`; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(ch, 12, 85);
+    const d = ctx.getImageData(0, 0, 90, 110).data;
+    const W = 90, H = 110, m = new Uint8Array(W * H);
+    let x0 = W, x1 = -1, y0 = H, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4] < 128) { m[y * W + x] = 1; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) continue;
+    TEMPLATES.push({ ch, v: normGlyph((x, y) => m[y * W + x], x0, y0, x1 - x0 + 1, y1 - y0 + 1) });
+  }
+  return TEMPLATES;
+}
+
+// Scale a glyph to GRID px tall (keeping its shape), centred in a GRID×GRID box; returns coverage 0..1.
+function normGlyph(get, bx, by, w, h) {
+  const out = new Float32Array(GRID * GRID);
+  const tw = Math.max(1, Math.min(GRID, Math.round(GRID * w / h))), off = (GRID - tw) / 2;
+  for (let gy = 0; gy < GRID; gy++) for (let gx = 0; gx < GRID; gx++) {
+    if (gx < Math.floor(off) || gx >= Math.ceil(off + tw)) continue;
+    let hit = 0, n = 0;
+    for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++) {
+      const fx = (gx + (sx + 0.5) / 3 - off) / tw, fy = (gy + (sy + 0.5) / 3) / GRID;
+      if (fx < 0 || fx >= 1) continue;
+      n++; hit += get(bx + Math.floor(fx * w), by + Math.floor(fy * h)) ? 1 : 0;
+    }
+    out[gy * GRID + gx] = n ? hit / n : 0;
+  }
+  return out;
+}
+
+// Count closed loops in a glyph (6 has one, 5 has none, 8 has two) — a reliable tie-breaker.
+function holes(get, w, h) {
+  const seen = new Uint8Array((w + 2) * (h + 2)), W2 = w + 2;
+  const bg = (x, y) => x < 0 || y < 0 || x >= w || y >= h || !get(x, y);
+  let count = 0;
+  for (let sy = -1; sy <= h; sy++) for (let sx = -1; sx <= w; sx++) {
+    const i0 = (sy + 1) * W2 + sx + 1;
+    if (seen[i0] || !bg(sx, sy)) continue;
+    let size = 0, edge = false; const st = [[sx, sy]]; seen[i0] = 1;
+    while (st.length) {
+      const [x, y] = st.pop(); size++;
+      if (x < 0 || y < 0 || x >= w || y >= h) edge = true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < -1 || ny < -1 || nx > w || ny > h) continue;
+        const j = (ny + 1) * W2 + nx + 1;
+        if (!seen[j] && bg(nx, ny)) { seen[j] = 1; st.push([nx, ny]); }
+      }
+    }
+    if (!edge && size >= Math.max(2, w * h * 0.012)) count++;
+  }
+  return count;
+}
+const LOOPS = { 0: '123457', 1: '0469', 2: '8' }; // digits allowed for each loop count (4 can be open or closed)
+
+function classify(v, loops, fonts) {
+  const allow = loops == null ? null : (LOOPS[Math.min(2, loops)] || '');
+  let best = null, bestD = Infinity;
+  for (const t of templates(fonts)) {
+    if (allow && /\d/.test(t.ch) && !allow.includes(t.ch)) continue;
+    let d = 0;
+    for (let i = 0; i < v.length; i++) d += Math.abs(v[i] - t.v[i]);
+    if (d < bestD) { bestD = d; best = t.ch; }
+  }
+  return { ch: best, d: bestD };
+}
+
+function ocrStaff({ W, dark }, st, bars, x0, x1) {
+  const sp = st.sp;
+  const top = Math.max(0, Math.floor(st.top - sp * 0.7)), bot = Math.ceil(st.bot + sp * 0.7);
+  const left = Math.max(0, Math.floor(x0)), right = Math.min(W - 1, Math.ceil(x1));
+  const w = right - left + 1, h = bot - top + 1;
+  const m = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = dark[(top + y) * W + left + x];
+  const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h ? m[y * w + x] : 0);
+  // remove string lines (keep pixels that continue above/below = digit strokes)
+  for (const l of st.lines) {
+    const a = Math.round(l.y0) - top - 1, b = Math.round(l.y1) - top + 1;
+    for (let x = 0; x < w; x++) if (!at(x, a) || !at(x, b)) for (let y = a + 1; y < b; y++) { if (!at(x, a) && !at(x, b)) m[y * w + x] = 0; }
+  }
+  // remove bar lines
+  for (const bx of bars) {
+    const cx = Math.round(bx) - left;
+    for (let y = 0; y < h; y++) for (let x = cx - 3; x <= cx + 3; x++) if (x >= 0 && x < w && !at(cx - 5, y) && !at(cx + 5, y)) m[y * w + x] = 0;
+  }
+  // connected shapes
+  const lab = new Int32Array(w * h), comps = [];
+  const stack = [];
+  for (let i = 0; i < w * h; i++) {
+    if (!m[i] || lab[i]) continue;
+    const id = comps.length + 1, c = { id, x0: w, y0: h, x1: -1, y1: -1, n: 0 };
+    lab[i] = id; stack.push(i);
+    while (stack.length) {
+      const k = stack.pop(), x = k % w, y = (k - x) / w;
+      c.n++; if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if ((dx || dy) && nx >= 0 && ny >= 0 && nx < w && ny < h) { const j = ny * w + nx; if (m[j] && !lab[j]) { lab[j] = id; stack.push(j); } }
+      }
+    }
+    comps.push(c);
+  }
+  for (const c of comps) { c.w = c.x1 - c.x0 + 1; c.h = c.y1 - c.y0 + 1; c.cy = top + (c.y0 + c.y1) / 2; }
+  // digit-sized shapes sitting on a string
+  let cand = comps.filter(c => c.h >= sp * 0.4 && c.h <= sp * 1.25 && c.w <= sp * 1.1 && c.h / c.w >= 0.9 && c.n >= 6);
+  const H = median(cand.map(c => c.h));
+  if (!H) return [];
+  cand = cand.filter(c => c.h >= H * 0.78 && c.h <= H * 1.18);
+  const glyphs = [];
+  for (const c of cand) {
+    const li = Math.round((c.cy - st.top) / sp);
+    if (li < 0 || li >= st.n || Math.abs(c.cy - (st.top + li * sp)) > sp * 0.42) continue;
+    const inC = (x, y) => lab[(c.y0 + y) * w + c.x0 + x] === c.id;
+    const r = classify(normGlyph((x, y) => lab[y * w + x] === c.id, c.x0, c.y0, c.w, c.h), holes(inC, c.w, c.h));
+    if (!/\d/.test(r.ch) || r.d > GRID * GRID * 0.32) continue;
+    glyphs.push({ li, x0: left + c.x0, x1: left + c.x1, ch: r.ch });
+  }
+  // join neighbouring digits on the same string (e.g. 1 + 2 → 12)
+  glyphs.sort((a, b) => a.li - b.li || a.x0 - b.x0);
+  const notes = [];
+  for (const g of glyphs) {
+    const last = notes[notes.length - 1];
+    if (last && last.li === g.li && g.x0 - last.x1 <= H * 0.35 && last.t.length < 2) { last.t += g.ch; last.x1 = g.x1; }
+    else notes.push({ li: g.li, x0: g.x0, x1: g.x1, t: g.ch });
+  }
+  return notes.map(n => ({ x: (n.x0 + n.x1) / 2, li: n.li, t: n.t }));
+}
+
+
+// ---------- section names drawn as pictures
+const SECTION_WORDS = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Post-Chorus', 'Bridge', 'Outro', 'Solo', 'Interlude', 'Instrumental', 'Riff', 'Ending', 'Tag', 'Breakdown', 'Hook', 'Refrain', 'Coda'];
+const WG_H = 12, WG_W = 44;
+function wordGrid(get, bx, by, w, h) {
+  const out = new Float32Array(WG_W * WG_H);
+  for (let gy = 0; gy < WG_H; gy++) for (let gx = 0; gx < WG_W; gx++) {
+    let hit = 0;
+    for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++)
+      hit += get(bx + Math.floor(((gx + (sx + 0.5) / 3) / WG_W) * w), by + Math.floor(((gy + (sy + 0.5) / 3) / WG_H) * h)) ? 1 : 0;
+    out[gy * WG_W + gx] = hit / 9;
+  }
+  return out;
+}
+let WORD_T = null;
+function wordTemplates() {
+  if (WORD_T) return WORD_T;
+  WORD_T = [];
+  const c = document.createElement('canvas'); c.width = 900; c.height = 140;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  for (const f of [...SERIF, ...SANS]) for (const wgt of ['bold', 'normal']) for (const word of SECTION_WORDS) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 900, 140);
+    ctx.fillStyle = '#000'; ctx.font = `${wgt} 80px "${f}"`; ctx.fillText(word, 10, 100);
+    const d = ctx.getImageData(0, 0, 900, 140).data;
+    let x0 = 900, x1 = -1, y0 = 140, y1 = -1;
+    for (let y = 0; y < 140; y++) for (let x = 0; x < 900; x++) if (d[(y * 900 + x) * 4] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) continue;
+    const get = (x, y) => d[(y * 900 + x) * 4] < 128;
+    WORD_T.push({ word, v: wordGrid(get, x0, y0, x1 - x0 + 1, y1 - y0 + 1), aspect: (x1 - x0 + 1) / (y1 - y0 + 1) });
+  }
+  return WORD_T;
+}
+
+function components(m, w, h) {
+  const lab = new Int32Array(w * h), comps = [], stack = [];
+  for (let i = 0; i < w * h; i++) {
+    if (!m[i] || lab[i]) continue;
+    const id = comps.length + 1, c = { id, x0: w, y0: h, x1: -1, y1: -1, n: 0 };
+    lab[i] = id; stack.push(i);
+    while (stack.length) {
+      const k = stack.pop(), x = k % w, y = (k - x) / w;
+      c.n++; if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if ((dx || dy) && nx >= 0 && ny >= 0 && nx < w && ny < h) { const j = ny * w + nx; if (m[j] && !lab[j]) { lab[j] = id; stack.push(j); } }
+      }
+    }
+    c.w = c.x1 - c.x0 + 1; c.h = c.y1 - c.y0 + 1;
+    comps.push(c);
+  }
+  return { lab, comps };
+}
+
+function findSections({ W, dark }, st, x0, x1, prevBot) {
+  const sp = st.sp;
+  const yA = Math.max(prevBot == null ? 0 : Math.round(prevBot + sp * 4), Math.floor(st.top - sp * 4.2)), yB = Math.floor(st.top - sp * 0.7);
+  if (yB - yA < sp * 0.8) return [];
+  const left = Math.max(0, Math.floor(x0)), w = Math.min(W - 1, Math.ceil(x1)) - left + 1, h = yB - yA + 1;
+  const m = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = dark[(yA + y) * W + left + x];
+  const { comps } = components(m, w, h);
+  const letters = comps.filter(c => c.h >= sp * 0.25 && c.h <= sp * 1.9 && c.n >= 4).sort((a, b) => a.x0 - b.x0);
+  const group = (items, gap) => {
+    const out = [];
+    for (const c of items) {
+      const g = out.find(g => {
+        if (c.x0 - g.x1 > gap || c.x0 < g.x0) return false;
+        const last = g.parts[g.parts.length - 1];           // letters of one word sit on the same line
+        const ov = Math.min(c.y1, last.y1) - Math.max(c.y0, last.y0);
+        return ov >= 0.45 * Math.min(c.h, last.h);
+      });
+      if (g) { g.x1 = Math.max(g.x1, c.x1); g.y0 = Math.min(g.y0, c.y0); g.y1 = Math.max(g.y1, c.y1); g.parts.push(c); }
+      else out.push({ x0: c.x0, x1: c.x1, y0: c.y0, y1: c.y1, parts: [c] });
+    }
+    return out;
+  };
+  const words = group(letters, sp * 0.45);
+  const found = [];
+  const used = new Set();
+  const matchBox = (x0, y0, x1, y1) => {
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    if (bh < sp * 0.55 || bh > sp * 2.2 || bw < bh * 1.2) return null;
+    const v = wordGrid((x, y) => m[y * w + x], x0, y0, bw, bh);
+    let best = null, bestD = Infinity;
+    for (const t of wordTemplates()) {
+      const ar = (bw / bh) / t.aspect;
+      if (ar < 0.72 || ar > 1.38) continue;
+      let d = 0; for (let i = 0; i < v.length; i++) d += Math.abs(v[i] - t.v[i]);
+      d = d / v.length + Math.abs(Math.log(ar)) * 0.15;
+      if (d < bestD) { bestD = d; best = t.word; }
+    }
+    return best && bestD <= 0.235 ? { word: best, bh } : null;
+  };
+  const digitsOf = (parts) => {
+    if (!parts.length || parts.length > 2) return null;
+    const r = parts.map(c => classify(normGlyph((x, y) => m[y * w + x], c.x0, c.y0, c.w, c.h), null, SERIF));
+    return r.every(x => /\d/.test(x.ch) && x.d < GRID * GRID * 0.3) ? r.map(x => x.ch).join('') : null;
+  };
+  const box = (parts) => parts.reduce((b, c) => ({ x0: Math.min(b.x0, c.x0), y0: Math.min(b.y0, c.y0), x1: Math.max(b.x1, c.x1), y1: Math.max(b.y1, c.y1) }), { x0: Infinity, y0: Infinity, x1: -1, y1: -1 });
+  for (const wd of words) {
+    if (used.has(wd)) continue;
+    const parts = wd.parts.slice().sort((p, q) => p.x0 - q.x0);
+    // try the whole group, then without 1–2 trailing shapes (a number glued on: "Verse 2")
+    for (let cut = 0; cut <= Math.min(2, parts.length - 2); cut++) {
+      const head = parts.slice(0, parts.length - cut), tail = parts.slice(parts.length - cut);
+      const bb = box(head);
+      const hit = matchBox(bb.x0, bb.y0, bb.x1, bb.y1);
+      if (!hit) continue;
+      let name = hit.word;
+      if (cut) { const d = digitsOf(tail); if (!d) continue; name += ' ' + d; }
+      else {
+        const next = words.find(o => o !== wd && !used.has(o) && o.x0 > wd.x1 && o.x0 - wd.x1 <= sp * 1.2 && Math.abs(o.y1 - wd.y1) <= sp * 0.35);
+        const d = next && digitsOf(next.parts);
+        if (d) { name += ' ' + d; used.add(next); }
+      }
+      found.push({ x: left + bb.x0, name });
+      break;
+    }
+  }
+  return found;
 }
