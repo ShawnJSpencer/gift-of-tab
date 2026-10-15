@@ -5,7 +5,7 @@
 import { TUNINGS, noteIndex, voicing, transposeChord, noteName } from './theory.js';
 import { uid } from './model.js';
 
-const FIELDS = ['instrument', 'tuning', 'tuningName', 'capo', 'transpose', 'blocks'];
+const FIELDS = ['instrument', 'tuning', 'tuningName', 'capo', 'transpose', 'blocks', 'bpm'];
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export const versionKey = (inst, mine) => inst + (mine ? ':mine' : '');
@@ -15,7 +15,7 @@ export const hasVersion = (song, key) => key === activeKey(song) || !!(song.vers
 export const hasMine = (song) => isMine(song) || Object.keys(song.versions || {}).some(k => k.endsWith(':mine'));
 
 function snapshot(song) { const o = {}; for (const f of FIELDS) o[f] = clone(song[f] ?? null); return o; }
-function load(song, v) { for (const f of FIELDS) song[f] = clone(v[f]); song.transpose = song.transpose || 0; song.capo = song.capo || 0; }
+function load(song, v) { for (const f of FIELDS) song[f] = clone(v[f] ?? null); song.transpose = song.transpose || 0; song.capo = song.capo || 0; }
 
 // Switch the song to another version, creating it if needed. Returns 'switched' | 'created'.
 export function switchVersion(song, instrument, mine) {
@@ -134,4 +134,11 @@ function convertTab(b, src, dst, fromOpen, toOpen) {
     }
   }
   return out;
+}
+
+// The original (radio) version's BPM, when you're looking at your own version of the same instrument.
+export function originalBpm(song) {
+  if (!isMine(song)) return null;
+  const o = song.versions && song.versions[versionKey(song.instrument, false)];
+  return o && o.bpm ? o.bpm : null;
 }

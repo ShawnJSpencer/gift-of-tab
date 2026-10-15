@@ -118,6 +118,55 @@ export function songScreen(root, songId, ctx = {}, nav) {
       else toast(inst === 'piano' ? '🎹 Made a piano version — chords & lyrics (moved up for the capo).' : `${INST[inst][0]} Made a ${INST[inst][1].toLowerCase()} version — check it over and edit anything that doesn't sit right.`, 4500);
     } else toast(mine ? `✨ ${stageName()} version` : `${INST[inst][0]} ${INST[inst][1]}${V.isMine(song) ? '' : ' (original)'}`);
   }
+  // ---------- tempo (BPM) — each version keeps its own, so Olden Gray can differ from the radio version
+  function bpmChip() {
+    const orig = V.originalBpm(song);
+    if (!song.bpm && mode !== 'edit') return null;
+    return h('button', { type: 'button', class: 'bpm-chip' + (song.bpm ? '' : ' empty'), title: 'Tempo (BPM)', onclick: (e) => { e.stopPropagation(); bpmSheet(); } },
+      h('span', { class: 'bpm-note' }, '♩'),
+      song.bpm ? h('span', {}, h('b', {}, song.bpm), ' BPM') : h('span', {}, 'Add BPM'),
+      orig && orig !== song.bpm ? h('span', { class: 'bpm-orig' }, `radio ${orig}`) : null);
+  }
+  function bpmSheet() {
+    const mine = V.isMine(song), orig = V.originalBpm(song);
+    let val = song.bpm || orig || 100;
+    const num = h('input', { type: 'number', inputmode: 'numeric', min: 30, max: 300, value: song.bpm || '', placeholder: String(val), class: 'bpm-big', 'aria-label': 'Beats per minute' });
+    const pulse = h('span', { class: 'bpm-pulse', 'aria-hidden': 'true' });
+    const cur = () => { const v = Math.round(+num.value); return v >= 30 && v <= 300 ? v : null; };
+    let beatTimer = null, beatN = 0;
+    const beat = () => {
+      clearTimeout(beatTimer);
+      const b = cur(); if (!b) return;
+      pulse.classList.remove('on', 'down'); void pulse.offsetWidth;
+      pulse.classList.add('on'); if (beatN % (song.beats || 4) === 0) pulse.classList.add('down');
+      beatN++;
+      beatTimer = setTimeout(beat, 60000 / b);
+    };
+    const set = (v) => { num.value = Math.max(30, Math.min(300, Math.round(v))); beatN = 0; beat(); };
+    num.addEventListener('input', () => { beatN = 0; beat(); });
+    const step = (d) => btn(d > 0 ? '+' + d : String(d), () => set((cur() || val) + d), { cls: 'small ghost' });
+    let taps = [];
+    const tapBtn = h('button', { type: 'button', class: 'tap-btn', onclick: () => {
+      const t = performance.now();
+      if (taps.length && t - taps[taps.length - 1] > 2000) taps = [];
+      taps.push(t); if (taps.length > 9) taps.shift();
+      if (taps.length >= 2) { const iv = (taps[taps.length - 1] - taps[0]) / (taps.length - 1); set(60000 / iv); }
+      tapBtn.classList.remove('hit'); void tapBtn.offsetWidth; tapBtn.classList.add('hit');
+    } }, 'Tap the beat', h('small', {}, 'tap 4+ times to find the tempo'));
+    const body = h('div', { class: 'form bpm-form' },
+      mine ? h('p', { class: 'hint' }, `This is the tempo for your ${stageName()} version.` + (orig ? ` The radio version stays at ${orig} BPM.` : '')) :
+        h('p', { class: 'hint' }, 'The song\'s usual (radio) tempo. Your Olden Gray version can have its own.'.replace('Olden Gray', stageName())),
+      h('div', { class: 'bpm-row' }, pulse, num, h('span', { class: 'bpm-unit' }, 'BPM')),
+      h('div', { class: 'row bpm-steps' }, step(-5), step(-1), step(1), step(5), mine && orig ? btn(`Use radio (${orig})`, () => set(orig), { cls: 'small ghost' }) : null),
+      tapBtn,
+      h('div', { class: 'row end' },
+        song.bpm ? btn('Clear', () => { pushUndo(); song.bpm = null; commit(); done(); }, { cls: 'ghost danger' }) : null,
+        btn('Save', () => { const v = cur(); pushUndo(); song.bpm = v; commit(); done(); }, { cls: 'primary', icon: 'check' })));
+    const sh = sheet('♩ Tempo', body, { cls: 'small', onClose: () => clearTimeout(beatTimer) });
+    function done() { clearTimeout(beatTimer); sh.close(); renderAll(); }
+    if (cur()) beat();
+  }
+
   function stageBadge() {
     const mine = V.isMine(song);
     return h('button', { type: 'button', class: 'stage-badge' + (mine ? ' on' : ''), title: mine ? 'Back to the original tab' : `Show your ${stageName()} version`,
@@ -152,6 +201,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
       song.capo ? h('span', { class: 'capo' }, `Capo ${song.capo}`) : null,
       song.instrument !== 'piano' ? h('span', { class: 'tuning' }, `${song.tuningName && song.tuningName !== 'Custom' ? song.tuningName + ' · ' : ''}${stringsTxt}`) : h('span', { class: 'tuning' }, 'Piano · chords'),
       song.transpose ? h('span', { class: 'tp' }, `Transposed ${song.transpose > 0 ? '+' : ''}${song.transpose}`) : null,
+      bpmChip(),
       stageBadge());
     scroll.append(meta);
     song.blocks.forEach((b, i) => {
@@ -586,12 +636,14 @@ export function songScreen(root, songId, ctx = {}, nav) {
     const beats = h('select', {}, [2, 3, 4, 5, 6, 7].map(n => h('option', { value: n, selected: (song.beats || 4) === n }, n + ' beats')));
     const subdiv = h('select', {}, [[1, 'Quarter notes'], [2, 'Eighth notes'], [3, 'Triplets'], [4, 'Sixteenths']].map(([n, l]) => h('option', { value: n, selected: (song.subdiv || 2) === n }, l)));
     const notes = h('textarea', { rows: 3, placeholder: 'Notes to self (strumming pattern, key, tempo…)' }, song.notes || '');
+    const bpmIn = h('input', { type: 'number', inputmode: 'numeric', min: 30, max: 300, value: song.bpm || '', placeholder: 'e.g. 89' });
     const body = h('div', { class: 'form' },
       field('Title', title), field('Artist', artist), field('Instrument', inst),
       h('div', { class: instrument === 'piano' ? 'hidden' : '' }),
       field('Tuning', presetSel), field('Strings (highest on top)', stringsBox, 'Change any string individually.'),
       field('Capo', capoRow, 'Shown at the top of the tab, just above the first line.'),
       h('div', { class: 'two' }, field('Bar length', beats), field('Beat boxes', subdiv)),
+      field(V.isMine(song) ? `BPM (${stageName()} version)` : 'BPM', bpmIn, V.originalBpm(song) ? `Radio version: ${V.originalBpm(song)} BPM` : 'Each version (and your own) can have its own tempo.'),
       field('Notes', notes),
       h('div', { class: 'row end' },
         btn('Delete song', async () => { if (await confirmBox(`Delete "${song.title}"? This can't be undone.`)) { s.close(); S.deleteSong(song.id); nav('#/'); } }, { cls: 'danger ghost', icon: 'trash' }),
@@ -612,6 +664,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
             song.tuningName = p ? p.name : 'Custom';
             song.capo = instrument === 'piano' ? 0 : capo;
           }
+          { const bv = Math.round(+bpmIn.value); song.bpm = bv >= 30 && bv <= 300 ? bv : null; }
           song.beats = +beats.value; song.subdiv = +subdiv.value; song.notes = notes.value;
           commit(); s.close(); cursor = null; renderAll(); renderKeypad(); buildBar();
         }, { cls: 'primary', icon: 'check' })));

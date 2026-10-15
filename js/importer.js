@@ -145,6 +145,9 @@ export function importText(raw, opts = {}) {
     let m;
     if ((m = t.match(/^\{(?:title|t):\s*(.+)\}$/i))) { song.title ||= m[1]; continue; }
     if ((m = t.match(/^\{(?:artist|subtitle|st):\s*(.+)\}$/i))) { song.artist ||= m[1]; continue; }
+    if ((m = t.match(/^\{?\s*(?:tempo|bpm)\s*[:=]?\s*(\d{2,3})\s*(?:bpm)?\s*\}?$/i)) || (m = t.match(/^(?:♩|\u2669|q)\s*=\s*(\d{2,3})$/i)) || (m = t.match(/^(\d{2,3})\s*bpm$/i))) {
+      const b = +m[1]; if (b >= 30 && b <= 300) song.bpm = b; continue;
+    }
     if ((m = t.match(/^\{?capo:?\s*(\d+)/i)) || (m = t.match(/^capo\s*(?:on|at)?\s*(?:fret)?\s*(\d+)/i))) { song.capo = +m[1]; continue; }
     if ((m = t.match(/^\{?tuning:?\s*(.+?)\}?$/i))) {
       const v = m[1].trim();
@@ -255,4 +258,11 @@ export function convertChordSheet(text) {
     } else out.push(l);
   }
   return out.join('\n');
+}
+
+// Find a tempo written in pasted text (Tempo: 120, BPM 120, ♩ = 89, 120 bpm).
+export function findBpm(text) {
+  const m = String(text || '').match(/(?:tempo|bpm)\s*[:=]?\s*(\d{2,3})|(?:♩|\u2669)\s*=\s*(\d{2,3})|\b(\d{2,3})\s*bpm\b/i);
+  const b = m ? +(m[1] || m[2] || m[3]) : 0;
+  return b >= 30 && b <= 300 ? b : null;
 }

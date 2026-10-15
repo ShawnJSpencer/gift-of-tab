@@ -440,3 +440,26 @@ html.stage .stage-badge { color: var(--amber); }
 .chords-preview:empty { display: none; }
 
 @media (max-width: 480px) { .song-row .tag:not(.mine) { display: none; } .song-row .tag.mine { font-size: .68rem; } }
+
+/* ---------- tempo */
+.bpm-chip { display: inline-flex; align-items: center; gap: .35em; border: 0; border-radius: 999px; padding: .2em .75em; background: rgba(108,154,160,.16); color: var(--teal-d); font: inherit; font-weight: 800; min-height: 30px; cursor: pointer; }
+html.stage .bpm-chip { color: var(--mint); background: rgba(197,222,211,.12); }
+.bpm-chip b { font-size: 1.1em; }
+.bpm-chip.empty { background: transparent; border: 1.5px dashed rgba(108,154,160,.6); }
+.bpm-note { font-size: 1.15em; line-height: 1; }
+.bpm-orig { font-size: .82em; opacity: .75; font-weight: 700; padding-left: .3em; border-left: 1px solid currentColor; }
+.bpm-row { display: flex; align-items: center; justify-content: center; gap: .8rem; }
+.bpm-big { width: 5.5ch; font-family: var(--display); font-size: 2.6rem; text-align: center; border: 0; border-radius: 14px; background: #F6F1EA; padding: .2em .1em; color: var(--rust); }
+html.stage .bpm-big { background: #3a302e; color: var(--amber); }
+.bpm-unit { font-weight: 900; color: var(--muted); }
+.bpm-steps { justify-content: center; }
+.bpm-pulse { width: 22px; height: 22px; border-radius: 50%; background: rgba(108,154,160,.25); flex: none; }
+.bpm-pulse.on { animation: bpmPulse .28s ease-out; }
+.bpm-pulse.on.down { animation-name: bpmDown; }
+@keyframes bpmPulse { 0% { background: var(--teal); transform: scale(1.35); } 100% { background: rgba(108,154,160,.25); transform: scale(1); } }
+@keyframes bpmDown { 0% { background: var(--rust); transform: scale(1.5); } 100% { background: rgba(108,154,160,.25); transform: scale(1); } }
+.tap-btn { border: 0; border-radius: 18px; padding: 1rem; background: var(--teal); color: #fff; font-weight: 900; font-size: 1.15rem; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 76px; touch-action: manipulation; }
+.tap-btn small { font-weight: 700; opacity: .85; font-size: .78rem; }
+.tap-btn.hit { animation: tapHit .15s ease-out; }
+@keyframes tapHit { 0% { transform: scale(.96); background: var(--teal-d); } }
+.bpm-input { max-width: 8rem; }
