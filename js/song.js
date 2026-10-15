@@ -6,6 +6,7 @@ import { uid, newTabBlock, newMeasure, emptyCol, resizeStrings, songChords } fro
 import { chordDiagram, emojiRain, logo } from './art.js';
 import { convertChordSheet } from './importer.js';
 import * as V from './versions.js';
+import { tuningPicker, keyPicker } from './pickers.js';
 
 const TECH = ['h', 'p', '/', '\\', 'b', 'r', '~', 'x', '( )', '<>', 'PM', 's', 't'];
 const TECH_HELP = { h: 'Hammer-on', p: 'Pull-off', '/': 'Slide up', '\\': 'Slide down', b: 'Bend', r: 'Release', '~': 'Vibrato', x: 'Muted / dead note', '( )': 'Ghost note', '<>': 'Harmonic', PM: 'Palm mute', s: 'Slide', t: 'Tap' };
@@ -119,6 +120,11 @@ export function songScreen(root, songId, ctx = {}, nav) {
     } else toast(mine ? `✨ ${stageName()} version` : `${INST[inst][0]} ${INST[inst][1]}${V.isMine(song) ? '' : ' (original)'}`);
   }
   // ---------- tempo (BPM) — each version keeps its own, so Olden Gray can differ from the radio version
+  function keyChip() {
+    if (!song.key) return null;
+    const shown = song.transpose ? transposeChord(song.key, song.transpose, /b/.test(song.key)) : null;
+    return h('span', { class: 'key-chip', title: 'Key' }, 'Key ', h('b', {}, song.key), shown ? h('span', { class: 'key-to' }, ' → ', h('b', {}, shown)) : null);
+  }
   function bpmChip() {
     const orig = V.originalBpm(song);
     if (!song.bpm && mode !== 'edit') return null;
@@ -201,6 +207,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
       song.capo ? h('span', { class: 'capo' }, `Capo ${song.capo}`) : null,
       song.instrument !== 'piano' ? h('span', { class: 'tuning' }, `${song.tuningName && song.tuningName !== 'Custom' ? song.tuningName + ' · ' : ''}${stringsTxt}`) : h('span', { class: 'tuning' }, 'Piano · chords'),
       song.transpose ? h('span', { class: 'tp' }, `Transposed ${song.transpose > 0 ? '+' : ''}${song.transpose}`) : null,
+      keyChip(),
       bpmChip(),
       stageBadge());
     scroll.append(meta);
@@ -605,29 +612,10 @@ export function songScreen(root, songId, ctx = {}, nav) {
     const inst = h('select', {}, Object.entries(INSTRUMENTS).map(([k, v]) => h('option', { value: k, selected: song.instrument === k }, v.name)));
     const title = h('input', { value: song.title, placeholder: 'Song title' });
     const artist = h('input', { value: song.artist, placeholder: 'Artist' });
-    const presetSel = h('select', {});
-    const stringsBox = h('div', { class: 'strings-row' });
-    let tuning = song.tuning.slice(), instrument = song.instrument;
-    const fillPresets = () => {
-      presetSel.innerHTML = '';
-      const list = TUNINGS[instrument];
-      const match = list.find(p => p.notes.join() === tuning.join());
-      list.forEach(p => presetSel.append(h('option', { value: p.name, selected: match && match.name === p.name }, p.name)));
-      presetSel.append(h('option', { value: 'Custom', selected: !match }, 'Custom'));
-    };
-    const fillStrings = () => {
-      stringsBox.innerHTML = '';
-      if (instrument === 'piano') return;
-      tuning.slice().reverse().forEach((nName, ri) => {
-        const i = tuning.length - 1 - ri;
-        const sel = h('select', { class: 'string-sel', 'aria-label': `String ${ri + 1}`, onchange: (e) => { tuning[i] = e.target.value; fillPresets(); } },
-          [...new Set([...SHARPS, 'Db', 'Eb', 'Gb', 'Ab', 'Bb'])].map(nn => h('option', { value: nn, selected: nn === nName }, nn)));
-        stringsBox.append(h('label', { class: 'string-pick' }, h('span', {}, ri + 1), sel));
-      });
-    };
-    inst.onchange = () => { instrument = inst.value; tuning = TUNINGS[instrument][0].notes.slice(); fillPresets(); fillStrings(); capoRow.style.display = instrument === 'piano' ? 'none' : ''; };
-    presetSel.onchange = () => { const p = TUNINGS[instrument].find(x => x.name === presetSel.value); if (p) { tuning = p.notes.slice(); fillStrings(); } };
-    fillPresets(); fillStrings();
+    let instrument = song.instrument;
+    const tp = tuningPicker({ instrument, tuning: song.instrument === 'piano' ? null : song.tuning });
+    const keySel = keyPicker(song.key);
+    inst.onchange = () => { instrument = inst.value; tp.setInstrument(instrument); capoRow.style.display = instrument === 'piano' ? 'none' : ''; };
     let capo = song.capo || 0;
     const capoVal = h('span', { class: 'stepper-val' }, capo ? 'Fret ' + capo : 'None');
     const capoRow = h('div', { class: 'stepper' },
@@ -639,9 +627,8 @@ export function songScreen(root, songId, ctx = {}, nav) {
     const bpmIn = h('input', { type: 'number', inputmode: 'numeric', min: 30, max: 300, value: song.bpm || '', placeholder: 'e.g. 89' });
     const body = h('div', { class: 'form' },
       field('Title', title), field('Artist', artist), field('Instrument', inst),
-      h('div', { class: instrument === 'piano' ? 'hidden' : '' }),
-      field('Tuning', presetSel), field('Strings (highest on top)', stringsBox, 'Change any string individually.'),
-      field('Capo', capoRow, 'Shown at the top of the tab, just above the first line.'),
+      field('Tuning', tp.el, 'Strings low → high. Change any string individually.'),
+      h('div', { class: 'two' }, field('Capo', capoRow, 'Shown above the first tab line.'), field(V.isMine(song) ? `Key (${stageName()})` : 'Key', keySel, 'Your version can be in its own key.')),
       h('div', { class: 'two' }, field('Bar length', beats), field('Beat boxes', subdiv)),
       field(V.isMine(song) ? `BPM (${stageName()} version)` : 'BPM', bpmIn, V.originalBpm(song) ? `Radio version: ${V.originalBpm(song)} BPM` : 'Each version (and your own) can have its own tempo.'),
       field('Notes', notes),
@@ -654,17 +641,15 @@ export function songScreen(root, songId, ctx = {}, nav) {
           if (instrument !== song.instrument) {
             // switching instrument = switching to that instrument's version (made automatically the first time)
             const made = V.switchVersion(song, instrument, V.isMine(song));
-            if (made === 'created' && instrument !== 'piano' && tuning.length === song.tuning.length) {
-              song.tuning = tuning; const tp = TUNINGS[instrument].find(x => x.notes.join() === tuning.join()); song.tuningName = tp ? tp.name : 'Custom';
-            }
+            if (made === 'created' && instrument !== 'piano' && tp.tuning.length === song.tuning.length) { song.tuning = tp.tuning; song.tuningName = tp.name; }
             if (instrument !== 'piano' && made === 'created') song.capo = capo;
           } else {
-            song.tuning = instrument === 'piano' ? [] : tuning;
-            const p = TUNINGS[instrument].find(x => x.notes.join() === tuning.join());
-            song.tuningName = p ? p.name : 'Custom';
+            song.tuning = instrument === 'piano' ? [] : tp.tuning;
+            song.tuningName = instrument === 'piano' ? '—' : tp.name;
             song.capo = instrument === 'piano' ? 0 : capo;
           }
           { const bv = Math.round(+bpmIn.value); song.bpm = bv >= 30 && bv <= 300 ? bv : null; }
+          song.key = keySel.value || null;
           song.beats = +beats.value; song.subdiv = +subdiv.value; song.notes = notes.value;
           commit(); s.close(); cursor = null; renderAll(); renderKeypad(); buildBar();
         }, { cls: 'primary', icon: 'check' })));

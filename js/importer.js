@@ -1,6 +1,7 @@
 // Import tabs pasted from other sites (Ultimate Guitar, Songsterr text, ChordPro, plain chord sheets).
 import { isChord, noteIndex, TUNINGS } from './theory.js';
 import { uid, now, emptyCol } from './model.js';
+import { normaliseKey as normKey } from './pickers.js';
 
 const TAB_LINE = /^\s*([A-Ga-g][#b]?)?\s*[|:]?[-–x0-9hpbrsStT\/\\~|().<>*=^ ]*$/;
 const isTabLine = (l) => TAB_LINE.test(l) && (l.match(/[-–]/g) || []).length >= 4;
@@ -145,6 +146,7 @@ export function importText(raw, opts = {}) {
     let m;
     if ((m = t.match(/^\{(?:title|t):\s*(.+)\}$/i))) { song.title ||= m[1]; continue; }
     if ((m = t.match(/^\{(?:artist|subtitle|st):\s*(.+)\}$/i))) { song.artist ||= m[1]; continue; }
+    if ((m = t.match(/^\{?\s*key\s*[:=]?\s*([A-G][#b]?\s*(?:m|min|minor|maj|major)?)\s*\}?$/i))) { const k = normKey(m[1]); if (k) song.key = k; continue; }
     if ((m = t.match(/^\{?\s*(?:tempo|bpm)\s*[:=]?\s*(\d{2,3})\s*(?:bpm)?\s*\}?$/i)) || (m = t.match(/^(?:♩|\u2669|q)\s*=\s*(\d{2,3})$/i)) || (m = t.match(/^(\d{2,3})\s*bpm$/i))) {
       const b = +m[1]; if (b >= 30 && b <= 300) song.bpm = b; continue;
     }
@@ -269,4 +271,20 @@ export function findBpm(text) {
   const m = String(text || '').match(/(?:tempo|bpm)\s*[:=]?\s*(\d{2,3})|(?:♩|\u2669)\s*=\s*(\d{2,3})|\b(\d{2,3})\s*bpm\b/i);
   const b = m ? +(m[1] || m[2] || m[3]) : 0;
   return b >= 30 && b <= 300 ? b : null;
+}
+
+// Quick look for capo / key / tuning written in pasted text (to pre-fill the import form).
+export function findSongMeta(text) {
+  const out = {};
+  for (const raw of String(text || '').split(/\r?\n/).slice(0, 80)) {
+    const t = raw.trim(); let m;
+    if (out.capo == null && (m = t.match(/^\{?\s*capo\s*[:=]?\s*(?:on|at)?\s*(?:fret)?\s*(\d{1,2})/i))) out.capo = Math.min(12, +m[1]);
+    if (out.capo == null && /^no\s+capo/i.test(t)) out.capo = 0;
+    if (!out.key && (m = t.match(/^\{?\s*key\s*[:=]?\s*([A-G][#b]?\s*(?:m|min|minor|maj|major)?)\s*\}?$/i))) out.key = normKey(m[1]);
+    if (!out.tuning && (m = t.match(/^\{?\s*tuning\s*[:=]?\s*((?:[A-G][#b]?\s*){4,6})\}?$/i))) {
+      const notes = m[1].match(/[A-Ga-g][#b]?/g).map(n => n[0].toUpperCase() + n.slice(1));
+      if (notes.every(n => noteIndex(n) !== undefined)) out.tuning = notes;
+    }
+  }
+  return out;
 }

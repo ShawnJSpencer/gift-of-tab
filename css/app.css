@@ -463,3 +463,19 @@ html.stage .bpm-big { background: #3a302e; color: var(--amber); }
 .tap-btn.hit { animation: tapHit .15s ease-out; }
 @keyframes tapHit { 0% { transform: scale(.96); background: var(--teal-d); } }
 .bpm-input { max-width: 8rem; }
+
+/* ---------- key, tuning picker, three-column fields */
+.three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .8rem; }
+@media (max-width: 480px) { .three { grid-template-columns: 1fr 1fr; } .three > :last-child { grid-column: 1 / -1; } }
+.tuning-picker { display: flex; flex-direction: column; gap: .5rem; }
+.tuning-picker > select { border: 0; border-radius: 12px; padding: .7rem .8rem; background: #F6F1EA; box-shadow: inset 0 0 0 2px rgba(97,76,73,.10); font-size: 1rem; min-height: 44px; width: 100%; }
+html.stage .tuning-picker > select { background: #3a302e; color: var(--ink); }
+.tuning-picker .strings-row { display: flex; gap: .35rem; flex-wrap: nowrap; }
+.tuning-picker .string-pick { flex: 1 1 0; min-width: 0; }
+.tuning-picker .string-sel { width: 100%; min-width: 0; padding: .45rem .1rem; }
+.key-chip { font-weight: 800; color: var(--brown); background: rgba(228,151,42,.18); border-radius: 999px; padding: .15em .7em; }
+html.stage .key-chip { color: var(--amber); }
+.key-to { color: var(--teal-d); }
+
+@media (max-width: 600px) { .two.stack-sm { grid-template-columns: 1fr; } }
+.tuning-picker .string-sel { -webkit-appearance: none; appearance: none; text-align: center; text-align-last: center; padding: .5rem 0; font-size: 1rem; }

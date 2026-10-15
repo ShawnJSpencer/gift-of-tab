@@ -4,7 +4,8 @@ import * as S from './store.js';
 import * as Sync from './sync.js';
 import { logo, countdownParts, emojiRain } from './art.js';
 import { newSong } from './model.js';
-import { importText, guessMeta, findBpm } from './importer.js';
+import { importText, guessMeta, findBpm, findSongMeta } from './importer.js';
+import { tuningPicker, keyPicker, capoPicker } from './pickers.js';
 import { hasMine } from './versions.js';
 
 const instEmoji = { guitar: '🎸', ukulele: '🪕', piano: '🎹' };
@@ -205,7 +206,20 @@ export function importSheet(nav) {
   const title = h('input', { placeholder: 'Song title' }), artist = h('input', { placeholder: 'Artist' });
   const bpm = h('input', { type: 'number', inputmode: 'numeric', min: 30, max: 300, placeholder: 'e.g. 89', class: 'bpm-input' });
   const inst = h('select', {}, h('option', { value: 'auto' }, 'Detect automatically'), h('option', { value: 'guitar' }, 'Guitar'), h('option', { value: 'ukulele' }, 'Ukulele'), h('option', { value: 'piano' }, 'Piano (chords)'));
-  ta.addEventListener('input', () => { const g = guessMeta(ta.value); if (g.title && !title.value) title.value = g.title; if (g.artist && !artist.value) artist.value = g.artist; const b = findBpm(ta.value); if (b && !bpm.value) bpm.value = b; });
+  const keySel = keyPicker(null, 'Not set');
+  const capoSel = capoPicker(null, 'Detect from the tab');
+  const tp = tuningPicker({ instrument: 'guitar', detect: true });
+  inst.addEventListener('change', () => tp.setInstrument(inst.value === 'auto' ? 'guitar' : inst.value));
+  const touched = new Set();
+  keySel.addEventListener('change', () => touched.add('key')); capoSel.addEventListener('change', () => touched.add('capo'));
+  tp.el.addEventListener('change', () => touched.add('tuning'));
+  ta.addEventListener('input', () => { const g = guessMeta(ta.value); if (g.title && !title.value) title.value = g.title; if (g.artist && !artist.value) artist.value = g.artist; const b = findBpm(ta.value); if (b && !bpm.value) bpm.value = b;
+    // pre-fill key / capo / tuning written in the tab (unless you've already picked them)
+    const m = findSongMeta(ta.value);
+    if (m.key && !touched.has('key')) keySel.value = m.key;
+    if (m.capo != null && !touched.has('capo')) capoSel.value = String(m.capo);
+    if (m.tuning && !touched.has('tuning')) { if (inst.value === 'auto') tp.setInstrument(m.tuning.length === 4 ? 'ukulele' : 'guitar'); tp.setTuning(m.tuning); }
+  });
   const paste = btn('Paste text', async () => { try { ta.value = await navigator.clipboard.readText(); ta.dispatchEvent(new Event('input')); } catch { toast('Tap in the box and paste instead'); ta.focus(); } }, { cls: 'ghost small', icon: 'copy' });
   const pdfNote = h('p', { class: 'hint pdf-note' });
   const inp = h('input', { type: 'file', accept: 'application/pdf,.pdf', class: 'hidden', onchange: async () => {
@@ -234,12 +248,17 @@ export function importSheet(nav) {
     h('p', { class: 'hint' }, 'Paste tab text copied from Ultimate Guitar, Songsterr or any site — or open a PDF tab (Guitar Pro, Songsterr and other downloaded/printed PDFs). Chords, six-line tab, lyrics and section names become an editable tab.'),
     h('div', { class: 'row' }, paste, pdfBtn, inp), pdfNote, ta,
     h('div', { class: 'two' }, field('Title', title), field('Artist', artist)),
-    h('div', { class: 'two' }, field('Instrument', inst), field('BPM (radio version)', bpm, 'Optional — you can set it later too.')),
+    h('div', { class: 'two stack-sm' }, field('Instrument', inst), field('Tuning', tp.el)),
+    h('div', { class: 'three' }, field('Key', keySel), field('Capo', capoSel), field('BPM', bpm)),
+    h('p', { class: 'hint' }, 'Key, capo, tuning and BPM are optional — anything written in the tab is filled in for you, and you can change them later.'),
     h('div', { class: 'row end' }, btn('Import', () => {
       if (!ta.value.trim()) return toast('Paste a tab first');
       const g = guessMeta(ta.value);
       const song = importText(ta.value, { title: title.value.trim() || g.title, artist: artist.value.trim() || g.artist, metaLine: g.metaLine, instrument: inst.value });
       const bv = +bpm.value; if (bv >= 30 && bv <= 300) song.bpm = Math.round(bv);
+      if (keySel.value) song.key = keySel.value;
+      if (capoSel.value !== '' && song.instrument !== 'piano') song.capo = +capoSel.value;
+      if (!tp.detect && song.instrument !== 'piano' && tp.tuning.length === song.tuning.length) { song.tuning = tp.tuning; song.tuningName = tp.name; }
       if (inst.value === 'ukulele' && song.instrument !== 'ukulele' && !song.blocks.some(b => b.type === 'tab')) { song.instrument = 'ukulele'; song.tuning = ['G', 'C', 'E', 'A']; song.tuningName = 'Standard (GCEA)'; }
       S.putSong(song); s.close(); toast('Imported! Tap Edit to customise.'); nav('#/song/' + song.id);
     }, { cls: 'primary', icon: 'import' }))));
