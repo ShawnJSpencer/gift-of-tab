@@ -223,6 +223,10 @@ export function importText(raw, opts = {}) {
     else if (!tuningSet) { song.tuning = TUNINGS.ukulele[0].notes.slice(); song.tuningName = TUNINGS.ukulele[0].name; }
   }
   if (opts.instrument === 'piano') song.instrument = 'piano';
+  // you picked Guitar but the tab looked like 4 strings → keep it a guitar tab (standard tuning)
+  if (opts.instrument === 'guitar' && song.instrument === 'ukulele') {
+    song.instrument = 'guitar'; song.tuning = TUNINGS.guitar[0].notes.slice(); song.tuningName = TUNINGS.guitar[0].name;
+  }
   if (opts.instrument === 'ukulele' && song.instrument === 'guitar' && !song.blocks.some(b => b.type === 'tab')) {
     song.instrument = 'ukulele'; song.tuning = TUNINGS.ukulele[0].notes.slice(); song.tuningName = TUNINGS.ukulele[0].name;
   }

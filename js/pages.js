@@ -213,7 +213,7 @@ export function importSheet(nav) {
       pdfBtn.disabled = true; pdfNote.textContent = 'Reading the PDF…';
       try {
         const { pdfToTabText } = await import('./pdfimport.js');
-        const r = await pdfToTabText(f, (p, n) => { pdfNote.textContent = `Reading page ${p} of ${n}…`; });
+        const r = await pdfToTabText(f, (p, n) => { pdfNote.textContent = `Reading page ${p} of ${n}…`; }, { instrument: inst.value });
         if (!r.text.trim()) {
           pdfNote.textContent = r.scanned ? 'Couldn\'t find any tab in this PDF — it may be a photo or a blurry scan.' : 'No tab or text was found in this PDF.';
         } else {

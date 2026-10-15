@@ -27,6 +27,8 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
   const pages = doc.numPages;
   const parts = [];
   let scanned = 0, staves = 0, meta = {};
+  // how many strings to expect: the instrument you picked, else a 'Tuning: E A D G B E' line
+  let expect = opts.instrument === 'guitar' ? 6 : opts.instrument === 'ukulele' ? 4 : 0;
   for (let p = 1; p <= pages; p++) {
     onProgress && onProgress(p, pages);
     const page = await doc.getPage(p);
@@ -37,7 +39,8 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
     // (pages with no text may still hold tab drawn as a picture — read those optically)
     if (p === 1) meta = { ...meta, ...takeTitle(items, vp.height) };
     let img = await raster(page, vp);
-    let res = analysePage(items.map(i => ({ ...i })), img);
+    if (!expect) { const tl = items.map(i => i.s).join(' ').match(/tuning\s*:?\s*((?:[A-G][#b]?(?=\s|$)\s*){4,7})/); if (tl) { const n = tl[1].match(/[A-G][#b]?/g).length; if (n === 6 || n === 4) expect = n; } }
+    let res = analysePage(items.map(i => ({ ...i })), img, expect);
     // tab drawn as pictures reads most reliably when the strings are ~28px apart — re-read finer if needed
     if (res.ocr && res.sp && Math.abs(res.sp - 28) > 1) {
       const k = Math.min(28 / res.sp, 2600 / vp.width);
@@ -46,7 +49,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
         img = await raster(page, vp2);
         const fresh = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp2, i));
         if (p === 1) takeTitle(fresh, vp2.height);
-        res = analysePage(fresh, img);
+        res = analysePage(fresh, img, expect);
       }
     }
     staves += res.staves;
@@ -83,15 +86,28 @@ async function raster(page, vp) {
 }
 
 // ---------- staff + bar detection
+// Row statistics: how much of the row is ink, and the longest stretch of line — bridging the small
+// white gaps that notes punch into a string line (e.g. power chords with an 8 on every beat).
+function rowStats(dark, W, y) {
+  const o = y * W, gap = Math.round(W * 0.03);
+  let cnt = 0, run = 0, best = 0, bridged = 0, bStart = -1, lastDark = -1e9, first = -1, last = -1;
+  for (let x = 0; x < W; x++) {
+    if (dark[o + x]) {
+      cnt++; run++; if (run > best) best = run;
+      if (first < 0) first = x; last = x;
+      if (x - lastDark - 1 > gap) bStart = x;
+      lastDark = x;
+      if (x - bStart + 1 > bridged) bridged = x - bStart + 1;
+    } else run = 0;
+  }
+  return { cnt, best, bridged, first, last };
+}
+
 function findLines({ W, H, dark }) {
   const rows = [];
   for (let y = 0; y < H; y++) {
-    let cnt = 0, run = 0, best = 0, first = -1, last = -1;
-    const o = y * W;
-    for (let x = 0; x < W; x++) {
-      if (dark[o + x]) { cnt++; run++; if (run > best) best = run; if (first < 0) first = x; last = x; } else run = 0;
-    }
-    if (cnt >= W * 0.3 && best >= W * 0.06) rows.push({ y, first, last });
+    const r = rowStats(dark, W, y);
+    if (r.cnt >= W * 0.3 && (r.best >= W * 0.06 || r.bridged >= W * 0.45)) rows.push({ y, first: r.first, last: r.last });
   }
   const lines = [];
   for (const r of rows) {
@@ -100,6 +116,28 @@ function findLines({ W, H, dark }) {
     else lines.push({ y0: r.y, y1: r.y, x0: r.first, x1: r.last });
   }
   return lines.filter(l => l.y1 - l.y0 < 7).map(l => ({ ...l, y: (l.y0 + l.y1) / 2 }));
+}
+
+// A guitar staff that came out with 4 or 5 lines (a string hidden under lots of notes): look one
+// spacing above/below for the missing line with looser rules.
+function completeStaff(img, st, want) {
+  const { W, H, dark } = img;
+  const probe = (yc) => {
+    for (let d = -2; d <= 2; d++) {
+      const y = Math.round(yc + d); if (y < 0 || y >= H) continue;
+      const r = rowStats(dark, W, y);
+      if (r.cnt >= W * 0.15 && r.bridged >= W * 0.3) return { y0: y, y1: y, y, x0: r.first, x1: r.last };
+    }
+    return null;
+  };
+  let guard = 0;
+  while (st.lines.length < want && guard++ < 3) {
+    const below = probe(st.bot + st.sp), above = probe(st.top - st.sp);
+    const add = below || above; if (!add) break;
+    if (add === below) st.lines.push(add); else st.lines.unshift(add);
+    st.n = st.lines.length; st.top = st.lines[0].y; st.bot = st.lines[st.lines.length - 1].y;
+  }
+  return st;
 }
 
 function groupStaves(lines, H) {
@@ -143,12 +181,15 @@ function findBars({ W, dark }, st) {
 }
 
 // ---------- page analysis
-function analysePage(items, img) {
+function analysePage(items, img, expect) {
   const all = groupStaves(findLines(img), img.H);
   // ASCII tabs drawn with dashes are text, not graphics — leave them to the text path
   const inBand = (st, it, pad) => it.cy >= st.top - pad && it.cy <= st.bot + pad;
   const staffs = all.filter(st => !items.some(it => inBand(st, it, st.sp) && /-{3,}|\|/.test(it.s)));
-  const tabs = staffs.filter(s => s.n === 6 || s.n === 4);
+  // a guitar tab (tuning says 6 strings, or another staff on the page has 6) whose staff came out short
+  const want6 = expect === 6 || staffs.some(st => st.n === 6);
+  if (want6) for (const st of staffs) if (st.n === 4 || st.n === 5) completeStaff(img, st, 6);
+  const tabs = staffs.filter(s => s.n === 6 || (s.n === 4 && !want6));
   const notation = staffs.filter(s => s.n === 5 || s.n > 6);
   const segments = [];
   let usedOcr = false, prevBot = null;
@@ -526,7 +567,7 @@ function ocrStaff({ W, dark: lineInk, ink }, st, bars, x0, x1) {
   const notes = [];
   for (const g of glyphs) {
     const last = notes[notes.length - 1];
-    if (last && last.li === g.li && g.x0 - last.x1 <= H * 0.35 && last.t.length < 2 && g.ch !== 'x' && last.t !== 'x') { last.t += g.ch; last.x1 = g.x1; }
+    if (last && last.li === g.li && g.x0 - last.x1 <= H * 0.6 && last.t.length < 2 && (last.t === '1' || last.t === '2') && g.ch !== 'x' && last.t !== 'x') { last.t += g.ch; last.x1 = g.x1; }
     else notes.push({ li: g.li, x0: g.x0, x1: g.x1, t: g.ch });
   }
   return notes.map(n => ({ x: (n.x0 + n.x1) / 2, li: n.li, t: n.t }));
@@ -552,9 +593,12 @@ function wordTemplates() {
   WORD_T = [];
   const c = document.createElement('canvas'); c.width = 900; c.height = 140;
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  for (const f of [...SERIF, ...SANS]) for (const wgt of ['bold', 'normal']) for (const word of SECTION_WORDS) {
+  // also the word with its first 1–2 letters missing — printouts sometimes cut labels off at the page edge
+  const variants = [];
+  for (const word of SECTION_WORDS) { variants.push([word, word]); for (const k of [1, 2, 3]) if (word.length - k >= 4) variants.push([word.slice(k), word]); }
+  for (const f of [...SERIF, ...SANS]) for (const wgt of ['bold', 'normal']) for (const [text, word] of variants) {
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 900, 140);
-    ctx.fillStyle = '#000'; ctx.font = `${wgt} 80px "${f}"`; ctx.fillText(word, 10, 100);
+    ctx.fillStyle = '#000'; ctx.font = `${wgt} 80px "${f}"`; ctx.fillText(text, 10, 100);
     const d = ctx.getImageData(0, 0, 900, 140).data;
     let x0 = 900, x1 = -1, y0 = 140, y1 = -1;
     for (let y = 0; y < 140; y++) for (let x = 0; x < 900; x++) if (d[(y * 900 + x) * 4] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
@@ -589,7 +633,7 @@ function findSections({ W, dark }, st, x0, x1, prevBot) {
   const sp = st.sp;
   const yA = Math.max(prevBot == null ? 0 : Math.round(prevBot + sp * 4), Math.floor(st.top - sp * 4.2)), yB = Math.floor(st.top - sp * 0.7);
   if (yB - yA < sp * 0.8) return [];
-  const left = Math.max(0, Math.floor(x0)), w = Math.min(W - 1, Math.ceil(x1)) - left + 1, h = yB - yA + 1;
+  const left = Math.max(0, Math.floor(x0 - sp * 4)), w = Math.min(W - 1, Math.ceil(x1)) - left + 1, h = yB - yA + 1; // labels can hang off the left edge
   const m = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = dark[(yA + y) * W + left + x];
   const { comps } = components(m, w, h);
