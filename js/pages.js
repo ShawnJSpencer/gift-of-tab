@@ -234,6 +234,7 @@ export function importSheet(nav) {
           ta.value = r.text;
           if (r.title && !title.value) title.value = r.title;
           if (r.artist && !artist.value) artist.value = r.artist;
+          if (r.bpm && !bpm.value) bpm.value = r.bpm;
           ta.dispatchEvent(new Event('input'));
           if (!title.value) title.value = f.name.replace(/\.pdf$/i, '');
           pdfNote.textContent = `Read ${r.pages} page${r.pages === 1 ? '' : 's'}` + (r.staves ? ` and ${r.staves} tab line${r.staves === 1 ? '' : 's'}` : '') + '. Check it below, fix anything odd, then tap Import.' +

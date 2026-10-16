@@ -17,6 +17,8 @@ async function pdfjs() {
   return lib;
 }
 
+const SECTION_RE = /^(intro|verse|pre[- ]?chorus|chorus|post[- ]?chorus|bridge|outro|solo|guitar solo|interlude|instrumental|riff|ending|tag|breakdown|hook|refrain|coda|middle 8)(\s*\d+)?:?$/i;
+const TECHNIQUE_RE = /^(let\s*ring|let|ring|p\.?\s?m\.?|palm\s*mute|harm\.?|n\.?h\.?|a\.?h\.?|p\.?h\.?|vib\.?|w\/\s?bar|full|1\/2|1\/4|tr|rit\.?|rall\.?|a\s*tempo|fade\s*out|[┤|\-–—_\s]+)$/i;
 const FRET = /^(\(?\d{1,2}\)?|[xX]|<\d{1,2}>|\d{1,2}[hpb\/\\]\d{1,2})$/;
 const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
 
@@ -38,6 +40,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
     const items = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp, i));
     // (pages with no text may still hold tab drawn as a picture — read those optically)
     if (p === 1) meta = { ...meta, ...takeTitle(items, vp.height) };
+    if (!meta.bpm) { const t = items.find(i => /^(?:[\u2669\uE000-\uF8FF]\s*)?=\s*\d{2,3}$/.test(i.s.trim())); if (t) { const b = +t.s.match(/\d{2,3}/)[0]; if (b >= 30 && b <= 300) { meta.bpm = b; t.used = true; } } }
     let img = await raster(page, vp);
     if (!expect) { const tl = items.map(i => i.s).join(' ').match(/tuning\s*:?\s*((?:[A-G][#b]?(?=\s|$)\s*){4,7})/); if (tl) { const n = tl[1].match(/[A-G][#b]?/g).length; if (n === 6 || n === 4) expect = n; } }
     let res = analysePage(items.map(i => ({ ...i })), img, expect);
@@ -107,7 +110,7 @@ function findLines({ W, H, dark }) {
   const rows = [];
   for (let y = 0; y < H; y++) {
     const r = rowStats(dark, W, y);
-    if (r.cnt >= W * 0.3 && (r.best >= W * 0.06 || r.bridged >= W * 0.45)) rows.push({ y, first: r.first, last: r.last });
+    if ((r.cnt >= W * 0.3 && (r.best >= W * 0.06 || r.bridged >= W * 0.45)) || (r.cnt >= W * 0.08 && r.best >= W * 0.012 && r.bridged >= W * 0.15)) rows.push({ y, first: r.first, last: r.last });
   }
   const lines = [];
   for (const r of rows) {
@@ -200,7 +203,10 @@ function analysePage(items, img, expect) {
     // chord names may sit above a standard-notation staff that belongs to this tab staff
     const above = notation.filter(nst => nst.bot < st.top && st.top - nst.bot < sp * 12).sort((a, b) => b.bot - a.bot)[0];
     const chordTop = (above ? above.top : st.top) - sp * 4.5;
-    const notes = [], chords = [], lyrics = [], tuning = [];
+    const notes = [], chords = [], lyrics = [], tuning = [], textLabels = [], dashes = [];
+    // lyrics can sit a little way under the staff (below 'let ring' markings) — but stop before the next staff
+    const nextTop = Math.min(...staffs.filter(o => o.top > st.bot).map(o => o.top), Infinity);
+    const lyricLimit = Math.min(st.bot + sp * 7.5, nextTop - sp * 3);
     for (const it of items) {
       if (it.used || it.x + it.w < x0 - sp * 3 || it.x > x1 + sp) continue;
       if (inBand(st, it, sp * 0.6)) {
@@ -211,22 +217,27 @@ function analysePage(items, img, expect) {
           const tx = it.x + (m.index / len) * it.w, tw = (tok.length / len) * it.w;
           const li = Math.round((it.cy - st.top) / sp);
           if (li < 0 || li >= st.n || Math.abs(it.cy - (st.top + li * sp)) > sp * 0.6) continue;
-          if (FRET.test(tok) && tx >= x0 - 2) notes.push({ x: tx + tw / 2, li, t: tok.replace(/^\((\d+)\)$/, '($1)') });
+          if (FRET.test(tok) && tx >= x0 - 2) notes.push({ x: tx + tw / 2, li, t: tok.replace(/^\((\d+)\)$/, '($1)').replace(/^X$/, 'x') });
           else if (/^[A-Ga-g][#b]?$/.test(tok) && tx < (bars[0] ?? x0) + sp) tuning[li] = tok;
         }
       } else if (it.cy < st.top && it.cy >= chordTop) {
         const t = it.s.trim();
         if (isChord(t)) { chords.push({ x: it.x, t }); it.used = true; }
+        else if (SECTION_RE.test(t)) { textLabels.push({ x: it.x, name: t.replace(/\s+/g, ' ') }); it.used = true; }
         else if (it.cy >= st.top - sp * 3) it.used = true; // technique labels (H, P, let ring…)
       } else if (/^[TAB]$/.test(it.s.trim()) && it.x < x0 + sp * 3 && it.cy >= st.top - sp * 2 && it.cy <= st.bot + sp * 2) {
         it.used = true; // the "TAB" clef
-      } else if (it.cy > st.bot && it.cy <= st.bot + sp * 4.6 && /[A-Za-z]/.test(it.s) && !isChord(it.s.trim()) && !/^\s*[\[{(]|:\s*$/.test(it.s)) {
-        lyrics.push({ x: it.x, t: it.s.trim() }); it.used = true;
+      } else if (it.cy > st.bot && it.cy <= lyricLimit && TECHNIQUE_RE.test(it.s.trim())) {
+        it.used = true; // let ring, P.M., harm. … are playing marks, not lyrics
+      } else if (it.cy > st.bot && it.cy <= lyricLimit && /[A-Za-z]/.test(it.s) && !isChord(it.s.trim()) && !/^\s*[\[{(]|:\s*$/.test(it.s) && !TECHNIQUE_RE.test(it.s.trim())) {
+        lyrics.push({ x: it.x, e: it.x + it.w, cy: it.cy, fs: it.fs, t: it.s.trim() }); it.used = true;
+      } else if (it.cy > st.bot && it.cy <= lyricLimit && /^[-–—_]+$/.test(it.s.trim())) {
+        it.used = true; dashes.push({ x: it.x + it.w / 2, cy: it.cy }); // word-break dashes between lyric syllables
       }
     }
     let usedOcrHere = false;
     if (!notes.length) { notes.push(...ocrStaff(img, st, bars, x0, x1)); if (notes.length) usedOcr = usedOcrHere = true; }
-    if (!notes.length) continue;
+    if (!notes.length && !lyrics.length) continue; // (a line with only lyrics — guitar resting — is kept)
     // beats: notes that line up vertically
     notes.sort((a, b) => a.x - b.x);
     const cols = [];
@@ -235,12 +246,27 @@ function analysePage(items, img, expect) {
       if (c && n.x - c.x <= sp * 0.55) { if (!c.n[n.li]) c.n[n.li] = n.t; }
       else { const col = { x: n.x, n: new Array(st.n).fill('') }; col.n[n.li] = n.t; cols.push(col); }
     }
-    for (const ch of chords) nearest(cols, ch.x, sp).c = ch.t;
-    for (const ly of lyrics) { const c = nearest(cols, ly.x, sp); c.l = c.l ? c.l + ' ' + ly.t : ly.t; }
     // bars → measures
     let edges = bars.slice();
-    if (!edges.length || edges[0] > cols[0].x - sp * 0.3) edges.unshift(Math.min(x0, cols[0].x - 1));
-    if (edges[edges.length - 1] < cols[cols.length - 1].x + sp * 0.3) edges.push(Math.max(x1, cols[cols.length - 1].x + 1));
+    const firstX = cols.length ? cols[0].x : x0 + sp, lastX = cols.length ? cols[cols.length - 1].x : x1 - sp;
+    if (!edges.length || edges[0] > firstX - sp * 0.3) edges.unshift(Math.min(x0, firstX - 1));
+    if (edges[edges.length - 1] < lastX + sp * 0.3) edges.push(Math.max(x1, lastX + 1));
+    const measureOf = (x) => { let k = 0; while (k < edges.length - 2 && x >= edges[k + 1]) k++; return k; };
+    for (const ch of chords) if (cols.length) nearest(cols, ch.x, sp).c = ch.t;
+    // lyrics go to a beat in their own bar; a bar with no notes gets an empty beat to hold its words
+    lyrics.sort((a, b) => a.x - b.x); // keep words in reading order when several share one beat
+    // a dash between two syllables means one word sung over several notes: "e– ver" → "e-" "ver"
+    for (let i = 0; i < lyrics.length - 1; i++) {
+      const a = lyrics[i], b = lyrics[i + 1];
+      if (Math.abs(a.cy - b.cy) < sp * 0.5 && (dashes.some(d => d.x > a.e - 1 && d.x < b.x + 1 && Math.abs(d.cy - a.cy) < sp) || drawnDash(img, a.e, b.x, a.cy, a.fs))) a.t = a.t.replace(/[-–]?$/, '-');
+    }
+    for (const ly of lyrics) {
+      const k = measureOf(ly.x);
+      const inBar = cols.filter(c => c.x > edges[k] && c.x < edges[k + 1]);
+      let c = inBar.length ? nearest(inBar, ly.x, sp) : null;
+      if (!c) { c = { x: Math.max(edges[k] + 1, Math.min(ly.x, edges[k + 1] - 1)), n: new Array(st.n).fill(''), l: '' }; cols.push(c); cols.sort((a, b) => a.x - b.x); }
+      c.l = c.l ? c.l + ' ' + ly.t : ly.t;
+    }
     const gaps = [];
     for (let k = 1; k < cols.length; k++) gaps.push(cols[k].x - cols[k - 1].x);
     const unit = Math.max(sp * 0.9, median(gaps.filter(g => g > sp * 0.5)) || sp * 1.5);
@@ -256,7 +282,7 @@ function analysePage(items, img, expect) {
       measures.push(out); starts.push(edges[k]);
     }
     // section names drawn in the picture (Intro, Verse 1, Chorus…) — may start mid-line
-    const labels = usedOcrHere ? findSections(img, st, x0, x1, prevBot) : [];
+    const labels = [...textLabels, ...(usedOcrHere ? findSections(img, st, x0, x1, prevBot) : [])];
     let text = '', from = 0;
     const cuts = labels.map(l => ({ ...l, k: Math.max(0, starts.filter(sx => sx <= l.x + sp).length - 1) })).sort((a, b) => a.k - b.k);
     for (const c of cuts) {
@@ -367,11 +393,11 @@ function charWeight(ch) {
 
 // Title = biggest text on page 1; "Music by …" / "by …" gives the artist.
 function takeTitle(items, H) {
-  const top = items.filter(i => i.base < H * 0.3);
+  const top = items.filter(i => i.base < H * 0.3 && /[A-Za-z]/.test(i.s)); // ignore music-font symbols (♩ etc.)
   if (!top.length) return {};
   const maxFs = Math.max(...top.map(i => i.fs));
   const tItems = top.filter(i => i.fs >= maxFs * 0.92).sort((a, b) => a.base - b.base || a.x - b.x);
-  if (maxFs < median(items.map(i => i.fs)) * 1.3) return {};
+  if (maxFs < median(items.filter(i => /[A-Za-z0-9]/.test(i.s)).map(i => i.fs)) * 1.3) return {};
   const firstBase = tItems[0].base;
   const titleIt = tItems.filter(i => Math.abs(i.base - firstBase) < maxFs * 0.5);
   titleIt.forEach(i => { i.used = true; });
@@ -698,3 +724,17 @@ function findSections({ W, dark }, st, x0, x1, prevBot) {
   return found;
 }
 
+
+// Is there a short horizontal dash drawn (as a line, not text) between two lyric syllables?
+function drawnDash({ W, H, dark }, xa, xb, cy, fs) {
+  const x0 = Math.ceil(xa + 1), x1 = Math.floor(xb - 1);
+  if (x1 - x0 < 3) return false;
+  const y0 = Math.max(0, Math.floor(cy - fs * 0.35)), y1 = Math.min(H - 1, Math.ceil(cy + fs * 0.2));
+  let ink = 0, tallCols = 0, best = 0;
+  for (let y = y0; y <= y1; y++) {
+    let run = 0;
+    for (let x = x0; x <= x1; x++) { if (dark[y * W + x]) { ink++; run++; if (run > best) best = run; } else run = 0; }
+  }
+  for (let x = x0; x <= x1; x++) { let c = 0; for (let y = y0; y <= y1; y++) c += dark[y * W + x]; if (c > (y1 - y0 + 1) * 0.6) tallCols++; }
+  return best >= Math.max(3, fs * 0.25) && tallCols === 0 && ink < (x1 - x0 + 1) * 4;
+}

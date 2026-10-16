@@ -3,7 +3,7 @@ import { isChord, noteIndex, TUNINGS } from './theory.js';
 import { uid, now, emptyCol } from './model.js';
 import { normaliseKey as normKey } from './pickers.js';
 
-const TAB_LINE = /^\s*([A-Ga-g][#b]?)?\s*[|:]?[-–x0-9hpbrsStT\/\\~|().<>*=^ ]*$/;
+const TAB_LINE = /^\s*([A-Ga-g][#b]?)?\s*[|:]?[-–xX0-9hpbrsStT\/\\~|().<>*=^ ]*$/;
 const isTabLine = (l) => TAB_LINE.test(l) && (l.match(/[-–]/g) || []).length >= 4;
 const CHORD_EXTRAS = /^(\||x\d+|\(|\)|-+|N\.?C\.?|\/|\.+|%)$/i;
 
