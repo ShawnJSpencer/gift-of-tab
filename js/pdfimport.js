@@ -110,13 +110,13 @@ function findLines({ W, H, dark }) {
   const rows = [];
   for (let y = 0; y < H; y++) {
     const r = rowStats(dark, W, y);
-    if ((r.cnt >= W * 0.3 && (r.best >= W * 0.06 || r.bridged >= W * 0.45)) || (r.cnt >= W * 0.08 && r.best >= W * 0.012 && r.bridged >= W * 0.15)) rows.push({ y, first: r.first, last: r.last });
+    if ((r.cnt >= W * 0.3 && (r.best >= W * 0.06 || r.bridged >= W * 0.45)) || (r.cnt >= W * 0.08 && r.best >= W * 0.012 && r.bridged >= W * 0.15)) rows.push({ y, first: r.first, last: r.last, cnt: r.cnt });
   }
   const lines = [];
   for (const r of rows) {
     const l = lines[lines.length - 1];
-    if (l && r.y - l.y1 <= 1) { l.y1 = r.y; l.x0 = Math.min(l.x0, r.first); l.x1 = Math.max(l.x1, r.last); }
-    else lines.push({ y0: r.y, y1: r.y, x0: r.first, x1: r.last });
+    if (l && r.y - l.y1 <= 1) { l.y1 = r.y; l.x0 = Math.min(l.x0, r.first); l.x1 = Math.max(l.x1, r.last); l.cnt = Math.max(l.cnt, r.cnt); }
+    else lines.push({ y0: r.y, y1: r.y, x0: r.first, x1: r.last, cnt: r.cnt });
   }
   return lines.filter(l => l.y1 - l.y0 < 7).map(l => ({ ...l, y: (l.y0 + l.y1) / 2 }));
 }
@@ -143,27 +143,43 @@ function completeStaff(img, st, want) {
   return st;
 }
 
+// Group lines into staffs. Dense tab can create "fake" lines (a row through the tops of many numbers),
+// so try every evenly spaced chain of 4–6 lines and keep the best ones: more lines first, then the
+// most solid (real string lines carry more ink), never two staffs overlapping.
 function groupStaves(lines, H) {
-  const out = [];
-  let i = 0;
-  while (i < lines.length) {
-    const g = [lines[i]];
-    let j = i + 1;
-    if (j < lines.length) {
+  const cands = [];
+  for (let i = 0; i < lines.length; i++) {
+    for (let j = i + 1; j < lines.length; j++) {
       const sp = lines[j].y - lines[i].y;
-      if (sp > H * 0.003 && sp < H * 0.03) {
-        g.push(lines[j]); j++;
-        while (j < lines.length && Math.abs(lines[j].y - g[g.length - 1].y - sp) <= Math.max(2, sp * 0.2)) { g.push(lines[j]); j++; }
+      if (sp <= H * 0.003) continue;
+      if (sp >= H * 0.03) break;
+      const tol = Math.max(2, sp * 0.15);
+      const chain = [i, j];
+      let dev = 0;
+      while (chain.length < 6) {
+        const want = lines[chain[chain.length - 1]].y + sp;
+        let k = -1, bd = Infinity;
+        for (let m = chain[chain.length - 1] + 1; m < lines.length && lines[m].y <= want + tol; m++) {
+          const d = Math.abs(lines[m].y - want);
+          if (d <= tol && d < bd) { bd = d; k = m; }
+        }
+        if (k < 0) break;
+        chain.push(k); dev += bd;
       }
+      if (chain.length < 4) continue;
+      const ls = chain.map(k => lines[k]);
+      const ink = ls.reduce((a, l) => a + (l.cnt || 0), 0) / ls.length;
+      cands.push({ ls, score: chain.length * 1e7 + ink - dev * 50 });
     }
-    if (g.length >= 4) {
-      // two staffs touching with the same spacing (rare) — split 12 into 6+6, 8 into 4+4
-      const chunks = g.length === 12 ? [g.slice(0, 6), g.slice(6)] : g.length === 8 ? [g.slice(0, 4), g.slice(4)] : [g];
-      for (const c of chunks) out.push({ lines: c, n: c.length, top: c[0].y, bot: c[c.length - 1].y, sp: (c[c.length - 1].y - c[0].y) / (c.length - 1) });
-      i = j;
-    } else i++;
   }
-  return out;
+  cands.sort((a, b) => b.score - a.score);
+  const out = [];
+  for (const c of cands) {
+    const top = c.ls[0].y, bot = c.ls[c.ls.length - 1].y, sp = (bot - top) / (c.ls.length - 1);
+    if (out.some(o => top <= o.bot + sp * 0.5 && bot >= o.top - sp * 0.5)) continue;
+    out.push({ lines: c.ls, n: c.ls.length, top, bot, sp });
+  }
+  return out.sort((a, b) => a.top - b.top);
 }
 
 function findBars({ W, dark }, st) {
@@ -203,7 +219,7 @@ function analysePage(items, img, expect) {
     // chord names may sit above a standard-notation staff that belongs to this tab staff
     const above = notation.filter(nst => nst.bot < st.top && st.top - nst.bot < sp * 12).sort((a, b) => b.bot - a.bot)[0];
     const chordTop = (above ? above.top : st.top) - sp * 4.5;
-    const notes = [], chords = [], lyrics = [], tuning = [], textLabels = [], dashes = [];
+    const notes = [], chords = [], lyrics = [], tuning = [], textLabels = [], dashes = [], techMarks = [];
     // lyrics can sit a little way under the staff (below 'let ring' markings) — but stop before the next staff
     const nextTop = Math.min(...staffs.filter(o => o.top > st.bot).map(o => o.top), Infinity);
     const lyricLimit = Math.min(st.bot + sp * 7.5, nextTop - sp * 3);
@@ -224,6 +240,7 @@ function analysePage(items, img, expect) {
         const t = it.s.trim();
         if (isChord(t)) { chords.push({ x: it.x, t }); it.used = true; }
         else if (SECTION_RE.test(t)) { textLabels.push({ x: it.x, name: t.replace(/\s+/g, ' ') }); it.used = true; }
+        else if (/^[HP]$/i.test(t) && it.cy >= st.top - sp * 3.2) { techMarks.push({ x: it.x + it.w / 2, t: t.toLowerCase() }); it.used = true; } // hammer-on / pull-off
         else if (it.cy >= st.top - sp * 3) it.used = true; // technique labels (H, P, let ring…)
       } else if (/^[TAB]$/.test(it.s.trim()) && it.x < x0 + sp * 3 && it.cy >= st.top - sp * 2 && it.cy <= st.bot + sp * 2) {
         it.used = true; // the "TAB" clef
@@ -245,6 +262,22 @@ function analysePage(items, img, expect) {
       const c = cols[cols.length - 1];
       if (c && n.x - c.x <= sp * 0.55) { if (!c.n[n.li]) c.n[n.li] = n.t; }
       else { const col = { x: n.x, n: new Array(st.n).fill('') }; col.n[n.li] = n.t; cols.push(col); }
+    }
+    // hammer-ons / pull-offs: an H or P above a pair of notes → "0h2", "4p0" on the string where it fits
+    for (const mk of techMarks) {
+      let best = null, bd = Infinity;
+      for (let i = 0; i < cols.length - 1; i++) {
+        const a = cols[i], b = cols[i + 1];
+        if (mk.x < a.x - sp * 0.6 || mk.x > b.x + sp * 0.6) continue;
+        for (let k = 0; k < st.n; k++) {
+          const fa = parseInt(a.n[k], 10), fb = parseInt(b.n[k], 10);
+          if (isNaN(fa) || isNaN(fb) || !/^\d+$/.test(a.n[k])) continue;
+          if (mk.t === 'h' ? fb <= fa : fb >= fa) continue;
+          const d = Math.abs((a.x + b.x) / 2 - mk.x);
+          if (d < bd) { bd = d; best = { col: a, k }; }
+        }
+      }
+      if (best) best.col.n[best.k] += mk.t;
     }
     // bars → measures
     let edges = bars.slice();
