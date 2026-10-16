@@ -403,6 +403,7 @@ export function settingsScreen(root, nav) {
     page.append(h('div', { class: 'card form' }, h('h2', {}, 'Performance'),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('tapPage', true), onchange: (e) => S.setPref('tapPage', e.target.checked) }), h('span', {}, 'Tap the bottom of the screen to page down (top to page up) while viewing a tab')),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('stage', false), onchange: (e) => S.setPref('stage', e.target.checked) }), h('span', {}, 'Stage mode (dark screen) for tabs')),
+      h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('notation', 'drawn') === 'drawn', onchange: (e) => S.setPref('notation', e.target.checked ? 'drawn' : 'letters') }), h('span', {}, 'Draw techniques the traditional way — arcs with H / P for hammer-ons and pull-offs, slide lines, bend arrows (off = plain letters like 5h7)')),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('wake', true), onchange: (e) => { S.setPref('wake', e.target.checked); } }), h('span', {}, 'Keep the screen awake while a tab is open'))));
 
     page.append(h('div', { class: 'card form' }, h('h2', {}, 'Backup'),

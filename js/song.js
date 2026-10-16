@@ -184,6 +184,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
 
   function setMode(m) {
     mode = m; cursor = null;
+    if (typeof updateTimer === 'function') { const was = editPause; editPause = mode === 'edit'; if (was !== editPause) { updateTimer(); toast(editPause ? '⏸ Practice timer paused while editing' : '▶ Practice timer running'); } }
     screen.classList.toggle('editing', mode === 'edit');
     if (mode === 'view' && auto.on) toggleAuto();
     renderAll(); buildBar(); renderKeypad();
@@ -307,6 +308,64 @@ export function songScreen(root, songId, ctx = {}, nav) {
     return wrap;
   }
 
+  // ---------- how a tab cell is shown: drawn symbols (arcs, slides, bends) or plain letters
+  const drawn = () => S.pref('notation', 'drawn') === 'drawn';
+  const SLIDE_UP = '<svg viewBox="0 0 12 12"><path d="M1 10.5L11 1.5"/></svg>', SLIDE_DOWN = '<svg viewBox="0 0 12 12"><path d="M1 1.5L11 10.5"/></svg>';
+  const BEND_UP = '<svg viewBox="0 0 12 20"><path d="M1 17C7 17 9 13 9 4"/><path class="fill" d="M9 1l-3 5h6z"/></svg>';
+  const BEND_DOWN = '<svg viewBox="0 0 12 20"><path d="M1 3C7 3 9 7 9 15"/><path class="fill" d="M9 19l-3-5h6z"/></svg>';
+  const VIB = '<svg viewBox="0 0 20 8"><path d="M1 5c2-4 3-4 5 0s3 4 5 0 3-4 5 0 2 2 3 1"/></svg>';
+  const REST_SVG = '<svg viewBox="0 0 14 30"><path d="M5 1l7 8-4 5 5 7c-4-2-8-1-6 4 0 3 3 4 3 4-6-1-8-6-4-9l-4-6 4-5-1-8z"/></svg>';
+  function cellDisplay(v) {
+    if (!drawn()) return { node: h('span', {}, v) };
+    let m;
+    const pm = /^PM/.test(v); const core = pm ? v.slice(2) : v;
+    const wrap = (...kids) => h('span', { class: 'tc' }, pm ? h('i', { class: 'pm' }, 'PM') : null, ...kids);
+    if ((m = core.match(/^(\d+)([hp])(\d+)$/))) return { node: wrap(h('span', {}, m[1]), h('span', { class: 'tie' }, h('i', {}, m[2].toUpperCase())), h('span', {}, m[3])) };
+    if ((m = core.match(/^(\d+)([\/\\s])(\d+)$/))) { const up = +m[3] > +m[1]; return { node: wrap(h('span', {}, m[1]), h('span', { class: 'sym slide', html: up ? SLIDE_UP : SLIDE_DOWN }), h('span', {}, m[3])) }; }
+    if ((m = core.match(/^(\d+)b(\d+)?$/))) { const amt = m[2] ? +m[2] - +m[1] : 2; return { node: wrap(h('span', {}, m[1]), h('span', { class: 'sym bend', html: BEND_UP }, h('i', {}, amt === 1 ? '½' : amt === 2 ? 'full' : amt > 2 ? `${amt / 2}` : ''))) }; }
+    if ((m = core.match(/^(\d+)r$/))) return { node: wrap(h('span', {}, m[1]), h('span', { class: 'sym bend', html: BEND_DOWN })) };
+    if ((m = core.match(/^(\d+)~$/))) return { node: wrap(h('span', {}, m[1]), h('span', { class: 'sym vib', html: VIB })) };
+    if ((m = core.match(/^(\d+)([hp\/\\s])$/))) return { node: wrap(h('span', {}, m[1])), tech: m[2] }; // joins the next note on this string
+    return { node: wrap(h('span', {}, core)) };
+  }
+  // Draw arcs / slide lines between a note and the next note on the same string (across beats).
+  function drawConnectors(line) {
+    line.querySelectorAll('.tech-layer').forEach(e => e.remove());
+    if (!drawn()) return;
+    const starts = line.querySelectorAll('.sc[data-tech]');
+    if (!starts.length) return;
+    const lr = line.getBoundingClientRect();
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('class', 'tech-layer'); svg.setAttribute('width', lr.width); svg.setAttribute('height', lr.height);
+    const cols = [...line.querySelectorAll('.col')];
+    for (const a of starts) {
+      const s = a.dataset.s, t = a.dataset.tech, colA = a.closest('.col');
+      let b = null;
+      for (let i = cols.indexOf(colA) + 1; i < cols.length && !b; i++) { const c = cols[i].querySelector(`.sc[data-s="${s}"]`); if (c && c.textContent.trim()) b = c; }
+      const na = a.querySelector('.tc > span:last-child') || a, ra = na.getBoundingClientRect();
+      const rb = b ? (b.querySelector('.tc > span') || b).getBoundingClientRect() : { left: lr.right - 4, right: lr.right - 4, top: ra.top, bottom: ra.bottom, width: 0 };
+      const x1 = ra.left + ra.width / 2 - lr.left, x2 = rb.left + rb.width / 2 - lr.left;
+      if (t === 'h' || t === 'p') {
+        const y = Math.min(ra.top, rb.top) - lr.top - 1, rise = Math.min(14, Math.max(6, (x2 - x1) * 0.25));
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', `M${x1} ${y} Q${(x1 + x2) / 2} ${y - rise * 2} ${x2} ${y}`);
+        path.setAttribute('class', 'arc'); svg.append(path);
+        const tx = document.createElementNS(svgNS, 'text');
+        tx.setAttribute('x', (x1 + x2) / 2); tx.setAttribute('y', y - rise - 3); tx.setAttribute('class', 'arc-label'); tx.textContent = t.toUpperCase();
+        svg.append(tx);
+      } else {
+        const fa = parseInt(a.textContent, 10), fb = b ? parseInt(b.textContent, 10) : fa + 1;
+        const up = t === '/' || (t === 's' && fb > fa), ym = (ra.top + ra.bottom) / 2 - lr.top, d = (ra.bottom - ra.top) * 0.35;
+        const ln = document.createElementNS(svgNS, 'line');
+        ln.setAttribute('x1', ra.right - lr.left + 2); ln.setAttribute('x2', rb.left - lr.left - 2);
+        ln.setAttribute('y1', ym + (up ? d : -d)); ln.setAttribute('y2', ym + (up ? -d : d)); ln.setAttribute('class', 'slide-line');
+        svg.append(ln);
+      }
+    }
+    line.append(svg);
+  }
+
   function renderMeasure(b, m, mi) {
     const n = song.tuning.length;
     const el = h('div', { class: 'measure', 'data-m': mi });
@@ -319,12 +378,14 @@ export function songScreen(root, songId, ctx = {}, nav) {
         const si = n - 1 - r;
         const v = c.n[si] || '';
         const sel = cursor && cursor.kind === 'fret' && cursor.b === b.id && cursor.m === mi && cursor.c === ci && cursor.s === si;
-        col.append(h('div', { class: 'sc' + (sel ? ' sel' : ''), 'data-s': si }, v ? h('span', {}, v) : ''));
+        const disp = v ? cellDisplay(v) : null;
+        col.append(h('div', { class: 'sc' + (sel ? ' sel' : ''), 'data-s': si, 'data-tech': disp && disp.tech ? disp.tech : null }, disp ? disp.node : ''));
       }
       if (b.lyrics) {
         const sel = cursor && cursor.kind === 'lyric' && cursor.b === b.id && cursor.m === mi && cursor.c === ci;
         col.append(h('div', { class: 'lc' + (sel ? ' sel' : '') }, c.l || ''));
       }
+      if (c.r) { col.classList.add('rest'); col.append(h('div', { class: 'rest-mark', 'aria-label': 'Rest', html: REST_SVG })); }
       if (cursor && cursor.b === b.id && cursor.m === mi && cursor.c === ci) col.classList.add('cur');
       el.append(col);
     });
@@ -368,6 +429,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
       cur.append(m); used += widths[i];
     });
     if (cur) cur.append(endBar());
+    lines.querySelectorAll('.tab-line').forEach(drawConnectors);
   }
   function layoutAll() { scroll.querySelectorAll('.block.tab').forEach(layoutBlock); }
   let rz = null;
@@ -475,6 +537,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
     const k = (label, fn, cls = '', title) => h('button', { type: 'button', class: 'k ' + cls, title: title || label, onclick: (e) => { e.preventDefault(); fn(); } }, label);
     const nav4 = [k('◀', () => move(0, -1), 'nav', 'Previous beat'), k('▲', () => move(-1, 0), 'nav', 'String above'), k('▼', () => move(1, 0), 'nav', 'String below'), k('▶', () => move(0, 1), 'nav', 'Next beat')];
     const ops = [k('+ Beat', insCol, 'op', 'Insert a beat after this one'), k('− Beat', delCol, 'op', 'Delete this beat'), k('+ Bar', insBar, 'op', 'Insert a bar after this one'), k('− Bar', delBar, 'op', 'Delete this bar'),
+      k(cc.col.r ? 'No rest' : 'Rest', () => { mutate(() => { cc.col.r = !cc.col.r; if (cc.col.r) cc.col.n = cc.col.n.map(() => ''); }, cc.b.id); renderKeypad(); }, 'op rest-k', 'A rest (silence) on this beat'),
       k('Clear beat', () => mutate(() => { cc.col.n = cc.col.n.map(() => ''); cc.col.c = ''; }, cc.b.id), 'op'),
       k('Done', () => { cursor = null; rerenderBlock(cc.b.id); renderKeypad(); }, 'done')];
     if (cursor.kind === 'lyric') {
@@ -679,9 +742,9 @@ export function songScreen(root, songId, ctx = {}, nav) {
   }
 
   // ---------- practice timer
-  let paused = false, pending = 0;
+  let paused = false, pending = 0, editPause = mode === 'edit'; // editing doesn't count as practice
   const goal = () => (S.db.settings.goal || 30) * 60;
-  timerPill.onclick = (e) => { e.stopPropagation(); paused = !paused; updateTimer(); toast(paused ? 'Practice timer paused' : 'Practice timer running'); };
+  timerPill.onclick = (e) => { e.stopPropagation(); if (editPause) return toast('The timer restarts when you tap Done'); paused = !paused; updateTimer(); toast(paused ? 'Practice timer paused' : 'Practice timer running'); };
   function updateTimer() {
     const secs = S.practiceOn(S.dayKey()) + pending;
     const g = goal(), pct = Math.min(1, secs / g);
@@ -689,14 +752,14 @@ export function songScreen(root, songId, ctx = {}, nav) {
     timerPill.innerHTML = '';
     timerPill.append(
       h('span', { class: 'ring', style: { '--p': pct } }),
-      h('span', {}, paused ? 'Paused' : `${mm}:${ss}`),
+      h('span', {}, editPause ? 'Editing ⏸' : paused ? 'Paused' : `${mm}:${ss}`),
       h('span', { class: 'goal' }, `/ ${S.db.settings.goal || 30}m`));
     timerPill.classList.toggle('met', secs >= g);
     handle.classList.toggle('met', secs >= g);
     handle.style.setProperty('--p', pct);
   }
   const tick = setInterval(() => {
-    if (paused || document.visibilityState !== 'visible') return;
+    if (paused || editPause || document.visibilityState !== 'visible') return;
     const before = S.practiceOn(S.dayKey()) + pending;
     pending++;
     if (pending >= 10) { S.addPractice(pending); pending = 0; }

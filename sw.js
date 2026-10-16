@@ -1,5 +1,5 @@
 // Offline support: the app works on stage even without Wi-Fi.
-const CACHE = 'gift-of-tab-v12';
+const CACHE = 'gift-of-tab-v13';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/model.js', 'js/theory.js',
   'js/importer.js', 'js/pdfimport.js', 'js/glyphs.js', 'js/versions.js', 'js/pickers.js', 'js/art.js', 'js/song.js', 'js/pages.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

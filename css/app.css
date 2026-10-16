@@ -479,3 +479,30 @@ html.stage .key-chip { color: var(--amber); }
 
 @media (max-width: 600px) { .two.stack-sm { grid-template-columns: 1fr; } }
 .tuning-picker .string-sel { -webkit-appearance: none; appearance: none; text-align: center; text-align-last: center; padding: .5rem 0; font-size: 1rem; }
+
+/* ---------- drawn techniques */
+.tab-line { position: relative; }
+.tech-layer { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.tech-layer .arc { fill: none; stroke: var(--ink); stroke-width: 1.3; opacity: .8; }
+.tech-layer .arc-label { font: 800 9px var(--font); fill: var(--rust); text-anchor: middle; paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+html.stage .tech-layer .arc-label { fill: var(--amber); }
+.tech-layer .slide-line { stroke: var(--ink); stroke-width: 1.4; opacity: .8; }
+.tc { display: inline-flex; align-items: center; position: relative; background: var(--paper); }
+.tc .pm { font-style: normal; font-size: .55em; font-family: var(--font); font-weight: 800; color: var(--teal-d); margin-right: .15em; }
+.tc .tie { position: relative; width: .75em; height: 1em; display: inline-block; }
+.tc .tie::before { content: ''; position: absolute; left: -.35em; right: -.35em; top: -.32em; height: .55em; border: 1.3px solid currentColor; border-color: currentColor transparent transparent transparent; border-radius: 50% 50% 0 0 / 100% 100% 0 0; opacity: .8; }
+.tc .tie i { position: absolute; left: 50%; top: -1.3em; transform: translateX(-50%); font: 800 .55em var(--font); font-style: normal; color: var(--rust); }
+html.stage .tc .tie i { color: var(--amber); }
+.tc .sym { display: inline-block; position: relative; flex: none; }
+.tc .sym svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.tc .sym path { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.tc .sym path.fill { fill: currentColor; stroke: none; }
+.tc .slide { width: .75em; height: .75em; margin: 0 .08em; }
+.tc .bend { width: .6em; height: 1.1em; margin-left: .05em; align-self: flex-end; transform: translateY(-.15em); }
+.tc .bend i { position: absolute; left: .45em; top: -.9em; font: 800 .55em var(--font); font-style: normal; color: var(--rust); white-space: nowrap; }
+html.stage .tc .bend i { color: var(--amber); }
+.tc .vib { width: .95em; height: .4em; margin-left: .08em; align-self: flex-start; transform: translateY(-.2em); }
+.col.rest { position: relative; min-width: 2.2ch; }
+.rest-mark { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -42%); width: .8em; height: 2em; pointer-events: none; }
+.rest-mark svg { width: 100%; height: 100%; fill: var(--ink); }
+.k.rest-k { background: var(--brown); }
