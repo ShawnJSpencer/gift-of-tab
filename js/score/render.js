@@ -1,6 +1,6 @@
 // Piano sheet music — engraver. Lays a score out as grand-staff systems and draws it as one SVG string.
 import { G } from './glyphs.js';
-import { len, capacity, parsePitch, keyAlters, BEAMS } from './model.js';
+import { len, capacity, parsePitch, keyAlters, BEAMS, beamGroups } from './model.js';
 
 const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BOTTOM = { t: 4 * 7 + 2, b: 2 * 7 + 4 }; // diatonic number of each staff's bottom line (E4, G2)
@@ -176,7 +176,7 @@ export function render(score, opts = {}) {
           const ds = (!e.rest && e.notes && e.notes.length) ? e.notes.map(dia).sort((a, b) => a - b) : null;
           return { ...E, x, ds };
         });
-        drawVoice(out, items, { top, bottomDia: BOTTOM[st], sp, beatLen, NW, NH, stemW, lineW, mi: M.mi, st, hit, isSel,
+        drawVoice(out, items, { top, bottomDia: BOTTOM[st], sp, beatLen, barLen: cap, NW, NH, stemW, lineW, mi: M.mi, st, hit, isSel,
           isPlaying: (i) => !!(playing && playing.has(`${M.mi}${st}${i}`)), nextFirst: () => nextBarFirst(M, st), tieEndX: Math.min(M.x1 + 1.5 * sp, width - 2) });
 
         // chord symbols & lyrics (stored on either hand; drawn above / below the treble staff)
@@ -209,18 +209,10 @@ export function render(score, opts = {}) {
 // Draw one voice (noteheads, stems, beams, flags, accidentals, ledger lines, ties, rests) on a five-line staff.
 // items: [{ e, i, t, x, ds (sorted diatonic numbers, or null for a rest), accs: [{p, alter}] }]
 export function drawVoice(out, items, o) {
-  const { top, bottomDia, sp, beatLen, NW, NH, stemW, lineW, mi, st, hit, isSel = () => false, isPlaying = () => false, nextFirst = () => null, tieEndX = 0, hitH = 7 } = o;
+  const { top, bottomDia, sp, beatLen, barLen, NW, NH, stemW, lineW, mi, st, hit, isSel = () => false, isPlaying = () => false, nextFirst = () => null, tieEndX = 0, hitH = 7 } = o;
   const mid = top + 2 * sp, botLine = top + 4 * sp;
   const yOf = (d) => botLine - (d - bottomDia) * sp / 2;
-  const groups = [];
-  let g = null;
-  items.forEach((it) => {
-    const beamable = it.ds && !!BEAMS[it.e.d];
-    const beat = Math.floor(it.t / beatLen), endsInBeat = Math.floor((it.t + len(it.e) - 1) / beatLen) === beat;
-    if (beamable && endsInBeat && g && g.beat === beat && g.last === it.t) { g.its.push(it); g.last = it.t + len(it.e); }
-    else { if (g && g.its.length > 1) groups.push(g); g = beamable && endsInBeat ? { beat, its: [it], last: it.t + len(it.e) } : null; }
-  });
-  if (g && g.its.length > 1) groups.push(g);
+  const groups = beamGroups(items, beatLen, barLen || beatLen, (it) => it.ds && !!BEAMS[it.e.d]);
   const midD = bottomDia + 4;
   const dirOf = (ds) => { const far = (ds[ds.length - 1] - midD) + (ds[0] - midD); return far >= 0 ? -1 : 1; }; // -1 = stem down
   items.forEach(it => { if (it.ds) it.dir = dirOf(it.ds); });

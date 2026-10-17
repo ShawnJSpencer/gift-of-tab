@@ -2,7 +2,7 @@
 // and rhythm (stems, beams, flags, rests) under the tab — like Guitar Pro printouts.
 import { G } from './glyphs.js';
 import { glyph, glyphW, drawVoice } from './render.js';
-import { len, capacity, parsePitch, keyAlters, spell, BEAMS } from './model.js';
+import { len, capacity, parsePitch, keyAlters, spell, BEAMS, beamGroups } from './model.js';
 import { pitchesOf } from './tech.js';
 
 const BOTTOM_T = 4 * 7 + 2; // E4 on the treble staff's bottom line
@@ -60,7 +60,8 @@ export function renderTech(score, song, opts = {}) {
       // width needed by the widest cell
       let w = 0;
       (e.n || []).forEach(c => { if (!c) return; const P = cellParts(c); const chars = P.nums.join('').length + (P.nums.length > 1 ? 2.6 : 0); w = Math.max(w, chars * digitW); });
-      extra[t] = Math.max(extra[t] || 0, w, showNot && accs.length ? 1.1 * sp : 0);
+      const lyW = e.lyric ? e.lyric.length * 0.78 * sp + 0.6 * sp : 0; // keep words from running together
+      extra[t] = Math.max(extra[t] || 0, w, lyW, showNot && accs.length ? 1.1 * sp : 0);
       evs.push({ e, i, t, ds: pitches.length ? pitches.map(dia) : null, accs });
       onsets.add(t); t += len(e);
     });
@@ -177,20 +178,13 @@ export function renderTech(score, song, opts = {}) {
       // notation staff (reuses the piano engraver)
       if (showNot && items.length) {
         const vItems = items.map(it => ({ ...it, ds: it.ds, e: it.ds || it.e.rest ? it.e : { ...it.e, rest: true } }));
-        drawVoice(out, vItems, { top: S.nTop, bottomDia: BOTTOM_T, sp, beatLen, NW, NH, stemW, lineW, mi: M.mi, st: 'g', hit: { xs: [] }, isSel, isPlaying,
+        drawVoice(out, vItems, { top: S.nTop, bottomDia: BOTTOM_T, sp, beatLen, barLen: cap, NW, NH, stemW, lineW, mi: M.mi, st: 'g', hit: { xs: [] }, isSel, isPlaying,
           nextFirst: () => { const nm = meas[M.mi + 1]; return nm && nm.X && S.ms.includes(nm) && nm.evs.length ? { x: nm.X(nm.evs[0].t) } : null; },
           tieEndX: Math.min(M.x1 + 1.5 * sp, width - 2), hitH: 7 });
       }
 
       // rhythm groups (beams per beat)
-      const groups = []; let g = null;
-      items.forEach(it => {
-        const beamable = !it.e.rest && !!BEAMS[it.e.d];
-        const beat = Math.floor(it.t / beatLen), inBeat = Math.floor((it.t + len(it.e) - 1) / beatLen) === beat;
-        if (beamable && inBeat && g && g.beat === beat && g.last === it.t) { g.its.push(it); g.last = it.t + len(it.e); }
-        else { if (g && g.its.length > 1) groups.push(g); g = beamable && inBeat ? { beat, its: [it], last: it.t + len(it.e) } : null; }
-      });
-      if (g && g.its.length > 1) groups.push(g);
+      const groups = beamGroups(items, beatLen, cap, (it) => !it.e.rest && !!BEAMS[it.e.d]);
       groups.forEach(gr => gr.its.forEach(it => { it.beamed = gr; }));
       const yStemEnd = S.rTop + 3.0 * sp, bt = 0.45 * sp;
       for (const gr of groups) {

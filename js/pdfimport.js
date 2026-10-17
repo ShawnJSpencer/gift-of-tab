@@ -84,13 +84,14 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
     if (sameStrings.length) tech = assembleTech(sameStrings, { tuning: tuningText && tuningText.length === strings ? tuningText : null, strings });
     if (tech) tech.strings = strings;
   } catch (e) { console.warn('tech', e); }
-  return { text: parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), pages, scanned, staves, tech, ...meta };
+  return { text: parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), pages, scanned, staves, tech, tuning: tuningText && (tuningText.length === 6 || tuningText.length === 4) ? tuningText : null, ...meta };
 }
 
 function toItem(L, vp, i) {
   const t = L.Util.transform(vp.transform, i.transform);
   const fs = Math.hypot(t[2], t[3]) || Math.hypot(t[0], t[1]) || 10;
-  return { s: i.str, x: t[4], w: (i.width || 0) * vp.scale, base: t[5], fs, cy: t[5] - fs * 0.35, used: false };
+  // music-font sharps/flats (E B E G♯ B E, F♯m) read as plain # and b
+  return { s: i.str.replace(/\u266F/g, '#').replace(/\u266D/g, 'b'), x: t[4], w: (i.width || 0) * vp.scale, base: t[5], fs, cy: t[5] - fs * 0.35, used: false };
 }
 
 async function raster(page, vp) {
@@ -348,8 +349,8 @@ function analysePage(items, img, expect) {
     segments.push({ y: st.top, text });
     // rhythm under the staff → Tech tab bars
     try {
-      const rh = readRhythm(img, st, { edges, cols, items, nextTop, x0, x1 });
-      if (rh && rh.bars.length) techStaffs.push({ y: st.top, n: st.n, sp, bars: rh.bars, labels: labels.map(l => ({ x: l.x, name: l.name })), tuning: tuning.slice() });
+      const rh = readRhythm(img, st, { edges, cols, items, nextTop, x0, x1, drawn: usedOcrHere });
+      if (rh && rh.bars.length) techStaffs.push({ y: st.top, n: st.n, sp, drawn: rh.drawn, bars: rh.bars, labels: labels.map(l => ({ x: l.x, name: l.name })), tuning: tuning.slice() });
     } catch (e) { console.warn('rhythm', e); }
     prevBot = st.bot;
   }

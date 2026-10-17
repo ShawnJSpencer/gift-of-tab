@@ -187,3 +187,23 @@ export function timeAt(score, m, s, i) {
   const evs = (score.measures[m] && score.measures[m][s]) || [];
   return m * capacity(score) + filled(evs.slice(0, i));
 }
+
+// Beam groups: notes beam within a beat, and in 4/4 or 2/4 a group may run on through the
+// half bar when a note crosses the beat (8th + dotted 8th + 16ths, as Guitar Pro draws it).
+export function beamGroups(items, beatLen, barLen, beamable) {
+  const half = barLen % 16 === 0 && beatLen === 8 ? 16 : beatLen;
+  const groups = [];
+  let g = null;
+  const close = () => { if (g && g.its.length > 1) groups.push(g); g = null; };
+  for (const it of items) {
+    const t = it.t, end = t + len(it.e);
+    const halfEnd = (Math.floor(t / half) + 1) * half;
+    if (!beamable(it) || end > halfEnd) { close(); continue; }
+    const reach = Math.min(Math.ceil(end / beatLen) * beatLen, halfEnd);
+    if (g && g.last === t && t < g.end && end <= g.halfEnd) { g.its.push(it); g.last = end; g.end = Math.max(g.end, reach); continue; }
+    close();
+    g = { its: [it], last: end, end: Math.max(reach, (Math.floor(t / beatLen) + 1) * beatLen), halfEnd };
+  }
+  close();
+  return groups;
+}

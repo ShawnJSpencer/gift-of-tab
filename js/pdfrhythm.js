@@ -10,7 +10,7 @@ const REST_GLYPH = { '': 32, '': 16, '': 8, '': 4, '': 2, '': 
 const DOT_GLYPH = '';
 
 // One tab staff → bars of rhythm events. `cols` are the note columns the fret reader found (with x).
-export function readRhythm(img, st, { edges, cols, items, nextTop, x0, x1 }) {
+export function readRhythm(img, st, { edges, cols, items, nextTop, x0, x1, drawn = false }) {
   const { W, H, ink } = img, sp = st.sp;
   const yA = Math.round(st.bot + sp * 0.3);
   const yB = Math.round(Math.min(H - 1, st.bot + sp * 6.5, (isFinite(nextTop) ? nextTop : H) - sp * 1.5));
@@ -34,9 +34,12 @@ export function readRhythm(img, st, { edges, cols, items, nextTop, x0, x1 }) {
     if (g && r.x - g.xe <= 1) { g.xe = r.x; g.top = Math.min(g.top, r.s); g.bot = Math.max(g.bot, r.e); }
     else stems.push({ xs: r.x, xe: r.x, top: r.s, bot: r.e });
   }
-  const real = stems.filter(s => s.xe - s.xs + 1 <= Math.max(3, sp * 0.3));
+  let real = stems.filter(s => s.xe - s.xs + 1 <= Math.max(3, sp * 0.3));
   if (!real.length) return null;
   for (const s of real) { s.x = (s.xs + s.xe) / 2; s.len = s.bot - s.top + 1; }
+  // a flag's curl can look like a short stem right next to the real one — drop those
+  const typical = median(real.map(s => s.len));
+  real = real.filter((s, i) => !(s.len < typical * 0.8 && [real[i - 1], real[i + 1]].some(t => t && t.len >= typical * 0.8 && Math.abs(t.x - s.x) < sp * 1.0)));
 
   // 2. beams & flags at the foot of each stem
   const reach = (x, y, dir) => { let n = 0; while (n < sp * 3 && at(x + dir * (n + 1), y)) n++; return n; };
@@ -79,13 +82,23 @@ export function readRhythm(img, st, { edges, cols, items, nextTop, x0, x1 }) {
 
   // 4. rests: music-font text, else shapes in the stem band that aren't stems or beams
   const rests = [];
+  // (Guitar Pro prints rests on the tab staff itself, sometimes with a dot after them)
+  const restDots = items.filter(i => i.s.includes(DOT_GLYPH) && i.cy >= st.top - sp && i.cy <= st.bot + sp);
   for (const it of items) {
-    if (it.cy < st.bot || it.cy > yB + sp || it.x < x0 - sp || it.x > x1 + sp) continue;
-    for (const ch of it.s) if (REST_GLYPH[ch]) { rests.push({ x: it.x + it.w / 2, L: REST_GLYPH[ch], text: true }); it.used = true; }
+    if (it.cy < st.top - sp || it.cy > yB + sp || it.x < x0 - sp || it.x > x1 + sp) continue;
+    for (const ch of it.s) if (REST_GLYPH[ch]) {
+      const x = it.x + it.w / 2;
+      const dot = restDots.find(d => d.x > x && d.x < x + sp * 1.4 && Math.abs(d.cy - it.cy) < sp * 1.5);
+      if (dot) dot.used = true;
+      rests.push({ x, L: REST_GLYPH[ch] * (dot ? 1.5 : 1), dotted: !!dot, text: true }); it.used = true;
+    }
   }
   const stemBot = median(real.map(s => s.bot));
-  if (!rests.length) rests.push(...opticalRests(img, st, real, yA, Math.round(stemBot + sp * 0.2), x0, x1));
+  // rests drawn as pictures only matter for picture tabs — text PDFs print theirs as music-font text
+  if (drawn && !rests.length) rests.push(...opticalRests(img, st, real, yA, Math.round(stemBot + sp * 0.2), x0, x1));
 
+  // tuplet marks ("3" printed by a beam group)
+  const tupX = items.filter(i => /^[356]$/.test(i.s.trim()) && i.cy > st.bot && i.cy < yB + sp).map(i => i.x + i.w / 2);
   // 5. durations from the marks
   const medLen = median(real.filter(s => s.beams || s.flags).map(s => s.len)) || median(real.map(s => s.len));
   for (const s of real) {
@@ -124,9 +137,9 @@ export function readRhythm(img, st, { edges, cols, items, nextTop, x0, x1 }) {
       if (best) { best.lyric = [best.lyric, c.l].filter(Boolean).join(' '); if (c.c && !best.chord) best.chord = c.c; }
     }
     if (globalThis.__rhDebug) console.log('rhythm-debug', JSON.stringify({ a: Math.round(a), sp: Math.round(sp*10)/10, stems: real.filter(s => inside(s.x)).map(s => [Math.round(s.x), s.beams, s.flags||0, s.len, s.dot?1:0]), cols: myCols.map(c => [Math.round(c.x), c.n.filter(Boolean).join('/')]) }));
-    bars.push({ a, b, evs });
+    bars.push({ a, b, evs, tup: tupX.filter(inside).length });
   }
-  return { bars, stems: real.length };
+  return { bars, stems: real.length, drawn };
 }
 
 // Rest symbols drawn as pictures (Ultimate Guitar): connected shapes in the stem band.
@@ -198,7 +211,7 @@ export function assembleTech(staffs, { tuning, strings, keyText } = {}) {
     if (unk.length) { const rem = cap - sum(); const each = rem > 0 ? Math.max(2, Math.floor(rem / unk.length / 2) * 2) : 8; unk.forEach(e => { e.L = each; }); }
     // triplets read as straight notes: three equal eighths/sixteenths in a row → long-short-short pattern
     let guard = 0;
-    while (sum() > cap && guard++ < 12) {
+    while (sum() > cap && (bar.tup || bar.sf.drawn) && guard++ < 12) {
       let done = false;
       for (let i = 0; i + 2 < evs.length && !done; i++) {
         const L = evs[i].L;
@@ -238,7 +251,7 @@ export function assembleTech(staffs, { tuning, strings, keyText } = {}) {
     for (const e of m.evs) {
       let cells = e.col && !e.rest ? e.col.n.slice().reverse().map(c => c || '') : null;
       // a stem with no fret above it is the far end of a tie: the note keeps ringing
-      if (e.stem && !e.col && prev && prev.n) { prev.tie = true; cells = prev.n.map(c => (c.match(/\d+/) || [''])[0]); }
+      if (e.stem && !e.col && prev && prev.n && m.sf.drawn) { prev.tie = true; cells = prev.n.map(c => (c.match(/\d+/) || [''])[0]); }
       const parts = splitLen(e.L);
       parts.forEach((p, pi) => {
         const ev = { d: p.d, ...(p.dot ? { dot: true } : {}) };

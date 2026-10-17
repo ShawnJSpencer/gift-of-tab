@@ -279,6 +279,8 @@ export function importSheet(nav) {
           if (r.artist && !artist.value) artist.value = r.artist;
           if (r.bpm && !bpm.value) bpm.value = r.bpm;
           ta.dispatchEvent(new Event('input'));
+          // a 'Tuning: E B E G# B E' line in the PDF sets the tuning (unless you've picked one)
+          if (r.tuning && !touched.has('tuning')) { if (inst.value === 'auto') tp.setInstrument(r.tuning.length === 4 ? 'ukulele' : 'guitar'); tp.setTuning(r.tuning); }
           if (!title.value) title.value = f.name.replace(/\.pdf$/i, '');
           pdfNote.textContent = `Read ${r.pages} page${r.pages === 1 ? '' : 's'}` + (r.staves ? ` and ${r.staves} tab line${r.staves === 1 ? '' : 's'}` : '') + '. Check it below, fix anything odd, then tap Import.' +
             (r.ocr ? ' Some of the tab was drawn as pictures and read by shape — give the numbers a quick check.' : '') +
