@@ -2,7 +2,7 @@
 // and rhythm (stems, beams, flags, rests) under the tab — like Guitar Pro printouts.
 import { G } from './glyphs.js';
 import { glyph, glyphW, drawVoice } from './render.js';
-import { len, capacity, parsePitch, keyAlters, spell } from './model.js';
+import { len, capacity, parsePitch, keyAlters, spell, BEAMS } from './model.js';
 import { pitchesOf } from './tech.js';
 
 const BOTTOM_T = 4 * 7 + 2; // E4 on the treble staff's bottom line
@@ -185,7 +185,7 @@ export function renderTech(score, song, opts = {}) {
       // rhythm groups (beams per beat)
       const groups = []; let g = null;
       items.forEach(it => {
-        const beamable = !it.e.rest && (it.e.d === '8' || it.e.d === '16');
+        const beamable = !it.e.rest && !!BEAMS[it.e.d];
         const beat = Math.floor(it.t / beatLen), inBeat = Math.floor((it.t + len(it.e) - 1) / beatLen) === beat;
         if (beamable && inBeat && g && g.beat === beat && g.last === it.t) { g.its.push(it); g.last = it.t + len(it.e); }
         else { if (g && g.its.length > 1) groups.push(g); g = beamable && inBeat ? { beat, its: [it], last: it.t + len(it.e) } : null; }
@@ -196,12 +196,15 @@ export function renderTech(score, song, opts = {}) {
       for (const gr of groups) {
         const a = gr.its[0].cx, b = gr.its[gr.its.length - 1].cx;
         out.push(`<rect class="ink" x="${n(a - stemW / 2)}" y="${n(yStemEnd - bt)}" width="${n(b - a + stemW)}" height="${n(bt)}"/>`);
-        gr.its.forEach((it, k) => {
-          if (it.e.d !== '16') return;
-          const nx = gr.its[k + 1], pv = gr.its[k - 1], yy = yStemEnd - bt - 0.7 * sp + bt * 0.2;
-          if (nx && nx.e.d === '16') out.push(`<rect class="ink" x="${n(it.cx - stemW / 2)}" y="${n(yy)}" width="${n(nx.cx - it.cx + stemW)}" height="${n(bt)}"/>`);
-          else if (!(pv && pv.e.d === '16')) { const st = 1.0 * sp; out.push(`<rect class="ink" x="${n(nx ? it.cx - stemW / 2 : it.cx - st)}" y="${n(yy)}" width="${n(st + stemW / 2)}" height="${n(bt)}"/>`); }
-        });
+        for (let level = 2; level <= 3; level++) {
+          const has = (it) => it && (BEAMS[it.e.d] || 0) >= level, yy = yStemEnd - bt - (0.7 * sp - bt * 0.2) * (level - 1);
+          gr.its.forEach((it, k) => {
+            if (!has(it)) return;
+            const nx = gr.its[k + 1], pv = gr.its[k - 1];
+            if (has(nx)) out.push(`<rect class="ink" x="${n(it.cx - stemW / 2)}" y="${n(yy)}" width="${n(nx.cx - it.cx + stemW)}" height="${n(bt)}"/>`);
+            else if (!has(pv)) { const st = 1.0 * sp; out.push(`<rect class="ink" x="${n(nx ? it.cx - stemW / 2 : it.cx - st)}" y="${n(yy)}" width="${n(st + stemW / 2)}" height="${n(bt)}"/>`); }
+          });
+        }
       }
 
       items.forEach((it, idx) => {
@@ -263,8 +266,8 @@ export function renderTech(score, song, opts = {}) {
         } else if (e.d !== 'w') {
           const y1 = e.d === 'h' ? rTop + 1.5 * sp : rTop;
           parts.push(`<line class="stem" x1="${n(cx)}" x2="${n(cx)}" y1="${n(y1)}" y2="${n(yStemEnd)}" stroke-width="${n(stemW)}"/>`);
-          if (!it.beamed && (e.d === '8' || e.d === '16')) { const fh = 2.3 * sp; parts.push(glyph(e.d === '8' ? 'flag8' : 'flag16', cx - stemW / 2, yStemEnd - fh, fh, { flipY: true }).svg); }
-          if (e.dot) parts.push(`<circle cx="${n(cx + 0.6 * sp)}" cy="${n(yStemEnd - 0.2 * sp)}" r="${n(0.18 * sp)}"/>`);
+          if (!it.beamed && BEAMS[e.d]) { const fh = 2.3 * sp; for (const o of e.d === '32' ? [0, 0.7 * sp] : [0]) parts.push(glyph(e.d === '8' ? 'flag8' : 'flag16', cx - stemW / 2, yStemEnd - fh - o, fh, { flipY: true }).svg); }
+          if (e.dot) parts.push(`<circle cx="${n(cx + 0.55 * sp)}" cy="${n(rTop + 1.3 * sp)}" r="${n(0.2 * sp)}"/>`);
         }
         out.push(`<g class="${cls}" data-m="${M.mi}" data-s="g" data-i="${it.i}">${parts.join('')}</g>`);
         if (e.chord) out.push(`<text class="chordsym" x="${n(cx - 0.4 * sp)}" y="${n(S.chY)}" font-size="${n(1.5 * sp)}">${esc(e.chord)}</text>`);

@@ -580,3 +580,7 @@ html.stage .tech-svg .ev.sel .fret { fill: var(--amber); }
 .tech-svg .ev.playing .fret { fill: var(--teal-d); }
 html.stage .tech-svg .ev.playing .fret { fill: var(--mint); }
 .tech-svg .ev.sel .ko, .tech-svg .ev.playing .ko { fill: var(--paper); }
+.import-as { display: flex; flex-direction: column; gap: 6px; margin: .4rem 0 .6rem; }
+.import-as[hidden] { display: none; }
+.as-opt { border: 2px solid transparent; }
+.as-opt.on { border-color: var(--amber); background: #FFF3E0; }

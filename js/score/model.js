@@ -2,9 +2,10 @@
 // score = { keyFifths: -7..7, time: [beats, unit], measures: [{ t: [events], b: [events] }] }   (t = treble/right hand, b = bass/left hand)
 // event = { d: 'w'|'h'|'q'|'8'|'16', dot?: true, rest?: true, notes?: ['C#4', …], tie?: true, lyric?: '', chord?: '' }
 
-export const DUR = { w: 32, h: 16, q: 8, '8': 4, '16': 2 }; // in 32nd notes
+export const DUR = { w: 32, h: 16, q: 8, '8': 4, '16': 2, '32': 1 }; // in 32nd notes
+export const BEAMS = { '8': 1, '16': 2, '32': 3 };
 export const DUR_ORDER = ['w', 'h', 'q', '8', '16'];
-export const DUR_NAME = { w: 'Whole', h: 'Half', q: 'Quarter', '8': 'Eighth', '16': 'Sixteenth' };
+export const DUR_NAME = { w: 'Whole', h: 'Half', q: 'Quarter', '8': 'Eighth', '16': 'Sixteenth', '32': 'Thirty-second' };
 export const len = (e) => DUR[e.d] * (e.dot ? 1.5 : 1);
 export const capacity = (score) => score.time[0] * (32 / score.time[1]);
 

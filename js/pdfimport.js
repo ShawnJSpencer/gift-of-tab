@@ -7,6 +7,7 @@
 // (chord sheets, ASCII tabs) is rebuilt line by line keeping its spacing.
 import { isChord, noteIndex } from './theory.js';
 import { UG, FONT } from './glyphs.js';
+import { readRhythm, assembleTech } from './pdfrhythm.js';
 
 let lib = null;
 async function pdfjs() {
@@ -29,6 +30,8 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
   const pages = doc.numPages;
   const parts = [];
   let scanned = 0, staves = 0, meta = {};
+  const techStaffs = [];
+  let tuningText = null;
   // how many strings to expect: the instrument you picked, else a 'Tuning: E A D G B E' line
   let expect = opts.instrument === 'guitar' ? 6 : opts.instrument === 'ukulele' ? 4 : 0;
   for (let p = 1; p <= pages; p++) {
@@ -42,6 +45,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
     if (p === 1) meta = { ...meta, ...takeTitle(items, vp.height) };
     if (!meta.bpm) { const t = items.find(i => /^(?:[\u2669\uE000-\uF8FF]\s*)?=\s*\d{2,3}$/.test(i.s.trim())); if (t) { const b = +t.s.match(/\d{2,3}/)[0]; if (b >= 30 && b <= 300) { meta.bpm = b; t.used = true; } } }
     let img = await raster(page, vp);
+    { const tl = items.map(i => i.s).join(' ').match(/tuning\s*:?\s*((?:[A-G][#b]?(?=\s|$)\s*){4,7})/i); if (tl && !tuningText) tuningText = tl[1].match(/[A-G][#b]?/g); }
     if (!expect) { const tl = items.map(i => i.s).join(' ').match(/tuning\s*:?\s*((?:[A-G][#b]?(?=\s|$)\s*){4,7})/); if (tl) { const n = tl[1].match(/[A-G][#b]?/g).length; if (n === 6 || n === 4) expect = n; } }
     let res = analysePage(items.map(i => ({ ...i })), img, expect);
     // tab drawn as pictures reads most reliably when the strings are ~28px apart — re-read finer if needed
@@ -54,7 +58,18 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
         if (p === 1) takeTitle(fresh, vp2.height);
         res = analysePage(fresh, img, expect);
       }
+    } else if (!res.ocr && res.sp && res.sp < 18 && res.staves) {
+      // thin beams need a sharper picture to count: read small staffs again a bit larger
+      const k = Math.min(20 / res.sp, 3000 / vp.width);
+      if (k > 1.1) {
+        const vp2 = page.getViewport({ scale: vp.scale * k });
+        img = await raster(page, vp2);
+        const fresh = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp2, i));
+        if (p === 1) takeTitle(fresh, vp2.height);
+        res = analysePage(fresh, img, expect);
+      }
     }
+    techStaffs.push(...(res.tech || []));
     staves += res.staves;
     if (items.length < 3 && !res.staves) scanned++;
     if (res.ocr) meta.ocr = true;
@@ -62,7 +77,14 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
     page.cleanup();
   }
   try { await task.destroy(); } catch {}
-  return { text: parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), pages, scanned, staves, ...meta };
+  let tech = null;
+  try {
+    const strings = techStaffs.length ? median(techStaffs.map(s => s.n)) : 6;
+    const sameStrings = techStaffs.filter(s => s.n === strings);
+    if (sameStrings.length) tech = assembleTech(sameStrings, { tuning: tuningText && tuningText.length === strings ? tuningText : null, strings });
+    if (tech) tech.strings = strings;
+  } catch (e) { console.warn('tech', e); }
+  return { text: parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), pages, scanned, staves, tech, ...meta };
 }
 
 function toItem(L, vp, i) {
@@ -210,7 +232,7 @@ function analysePage(items, img, expect) {
   if (want6) for (const st of staffs) if (st.n === 4 || st.n === 5) completeStaff(img, st, 6);
   const tabs = staffs.filter(s => s.n === 6 || (s.n === 4 && !want6));
   const notation = staffs.filter(s => s.n === 5 || s.n > 6);
-  const segments = [];
+  const segments = [], techStaffs = [];
   let usedOcr = false, prevBot = null;
 
   for (const st of tabs) {
@@ -324,13 +346,18 @@ function analysePage(items, img, expect) {
     }
     text += '\n' + staffToAscii(st.n, measures.slice(from), tuning) + '\n';
     segments.push({ y: st.top, text });
+    // rhythm under the staff → Tech tab bars
+    try {
+      const rh = readRhythm(img, st, { edges, cols, items, nextTop, x0, x1 });
+      if (rh && rh.bars.length) techStaffs.push({ y: st.top, n: st.n, sp, bars: rh.bars, labels: labels.map(l => ({ x: l.x, name: l.name })), tuning: tuning.slice() });
+    } catch (e) { console.warn('rhythm', e); }
     prevBot = st.bot;
   }
   // standard notation is skipped — its symbols aren't useful as text
   for (const nst of notation) for (const it of items) if (!it.used && inBand(nst, it, nst.sp * 2)) it.used = true;
   for (const ln of textLines(items)) segments.push(ln);
   segments.sort((a, b) => a.y - b.y);
-  return { text: segments.map(s => s.text).join('\n'), staves: tabs.length, ocr: usedOcr, sp: median(tabs.map(t => t.sp)) };
+  return { text: segments.map(s => s.text).join('\n'), staves: tabs.length, ocr: usedOcr, sp: median(tabs.map(t => t.sp)), tech: techStaffs };
 }
 
 function nearest(cols, x, sp) {

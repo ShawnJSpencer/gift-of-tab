@@ -4,7 +4,7 @@ import * as S from './store.js';
 import * as Sync from './sync.js';
 import { logo, countdownParts, emojiRain } from './art.js';
 import { newSong } from './model.js';
-import { newScore } from './score/model.js';
+import { newScore, KEY_NAMES, KEY_MINOR } from './score/model.js';
 import { newTech } from './score/tech.js';
 import { importText, guessMeta, findBpm, findSongMeta } from './importer.js';
 import { tuningPicker, keyPicker, capoPicker } from './pickers.js';
@@ -248,6 +248,22 @@ export function importSheet(nav) {
   });
   const paste = btn('Paste text', async () => { try { ta.value = await navigator.clipboard.readText(); ta.dispatchEvent(new Event('input')); } catch { toast('Tap in the box and paste instead'); ta.focus(); } }, { cls: 'ghost small', icon: 'copy' });
   const pdfNote = h('p', { class: 'hint pdf-note' });
+  // a PDF with rhythm under the tab can come in as a Tech tab
+  let techRead = null, asTech = true;
+  const asRow = h('div', { class: 'import-as', hidden: true });
+  function renderAs() {
+    asRow.innerHTML = '';
+    if (!techRead) { asRow.hidden = true; return; }
+    asRow.hidden = false;
+    const t = techRead;
+    const opt = (on, emoji, label, sub, fn) => h('button', { type: 'button', class: 'card inst as-opt' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: fn }, h('span', { class: 'big-emoji' }, emoji), h('b', {}, label), h('span', {}, sub));
+    asRow.append(h('div', { class: 'field-label' }, 'Import as'),
+      h('div', { class: 'inst-pick piano-pick' },
+        opt(asTech, '🎼', 'Tech tab', `Rhythm read for ${t.bars} bar${t.bars === 1 ? '' : 's'} · ${t.time[0]}/${t.time[1]} · key of ${KEY_NAMES[t.keyFifths]}${keySel.value ? '' : ' (best guess)'}`, () => { asTech = true; renderAs(); }),
+        opt(!asTech, '🎸', 'Tab', 'Fret numbers, chords & lyrics — edit in the box below', () => { asTech = false; renderAs(); })),
+      asTech ? h('p', { class: 'hint' }, 'The Tech tab is built straight from the PDF (the text box shows the plain version). ' + (t.guessed ? `${t.guessed} bar${t.guessed === 1 ? '' : 's'} didn't add up and were spaced out by eye — worth a listen. ` : '') + 'Check it with Play after importing.') : null);
+  }
+  keySel.addEventListener('change', renderAs);
   const inp = h('input', { type: 'file', accept: 'application/pdf,.pdf', class: 'hidden', onchange: async () => {
       const f = inp.files[0]; if (!f) return;
       pdfBtn.disabled = true; pdfNote.textContent = 'Reading the PDF…';
@@ -258,6 +274,7 @@ export function importSheet(nav) {
           pdfNote.textContent = r.scanned ? 'Couldn\'t find any tab in this PDF — it may be a photo or a blurry scan.' : 'No tab or text was found in this PDF.';
         } else {
           ta.value = r.text;
+          techRead = r.tech && r.tech.notes > 0 && r.tech.bars > 0 ? r.tech : null; asTech = !!techRead; renderAs();
           if (r.title && !title.value) title.value = r.title;
           if (r.artist && !artist.value) artist.value = r.artist;
           if (r.bpm && !bpm.value) bpm.value = r.bpm;
@@ -273,7 +290,7 @@ export function importSheet(nav) {
   const pdfBtn = btn('Open a PDF', () => inp.click(), { cls: 'small', icon: 'import' });
   const s = sheet('Import a tab', h('div', { class: 'form' },
     h('p', { class: 'hint' }, 'Paste tab text copied from Ultimate Guitar, Songsterr or any site — or open a PDF tab (Guitar Pro, Songsterr and other downloaded/printed PDFs). Chords, six-line tab, lyrics and section names become an editable tab.'),
-    h('div', { class: 'row' }, paste, pdfBtn, inp), pdfNote, ta,
+    h('div', { class: 'row' }, paste, pdfBtn, inp), pdfNote, asRow, ta,
     h('div', { class: 'two' }, field('Title', title), field('Artist', artist)),
     h('div', { class: 'two stack-sm' }, field('Instrument', inst), field('Tuning', tp.el)),
     h('div', { class: 'three' }, field('Key', keySel), field('Capo', capoSel), field('BPM', bpm)),
@@ -287,6 +304,15 @@ export function importSheet(nav) {
       if (capoSel.value !== '' && song.instrument !== 'piano') song.capo = +capoSel.value;
       if (!tp.detect && song.instrument !== 'piano' && tp.tuning.length === song.tuning.length) { song.tuning = tp.tuning; song.tuningName = tp.name; }
       if (inst.value === 'ukulele' && song.instrument !== 'ukulele' && !song.blocks.some(b => b.type === 'tab')) { song.instrument = 'ukulele'; song.tuning = ['G', 'C', 'E', 'A']; song.tuningName = 'Standard (GCEA)'; }
+      if (techRead && asTech && song.instrument !== 'piano' && techRead.strings === song.tuning.length) {
+        const t = techRead;
+        let f = t.keyFifths;
+        if (keySel.value) { const k = Object.keys(KEY_NAMES).find(x => KEY_NAMES[x] === keySel.value || KEY_MINOR[x] === keySel.value); if (k != null) f = +k; }
+        song.kind = 'tech'; song.blocks = [];
+        song.tech = { keyFifths: f, time: t.time, staves: ['g'], notation: true, measures: t.measures };
+        song.key = keySel.value || KEY_NAMES[f];
+        if (!song.bpm) song.bpm = 90;
+      }
       S.putSong(song); s.close(); toast('Imported! Tap Edit to customise.'); nav('#/song/' + song.id);
     }, { cls: 'primary', icon: 'import' }))));
   setTimeout(() => ta.focus(), 300);

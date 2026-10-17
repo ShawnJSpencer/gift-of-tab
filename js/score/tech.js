@@ -31,8 +31,8 @@ export function pitchesOf(e, song) {
 // Note values that add up to a length (for durations that aren't a single note value).
 export function notesFor(L) {
   const out = [];
-  for (const d of DUR_ORDER) {
-    if (d !== '16' && L >= DUR[d] * 1.5) { out.push({ d, dot: true }); L -= DUR[d] * 1.5; }
+  for (const d of [...DUR_ORDER, '32']) {
+    if (d !== '16' && d !== '32' && L >= DUR[d] * 1.5) { out.push({ d, dot: true }); L -= DUR[d] * 1.5; }
     while (L >= DUR[d]) { out.push({ d }); L -= DUR[d]; }
   }
   return out;

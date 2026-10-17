@@ -1,6 +1,6 @@
 // Piano sheet music — engraver. Lays a score out as grand-staff systems and draws it as one SVG string.
 import { G } from './glyphs.js';
-import { len, capacity, parsePitch, keyAlters } from './model.js';
+import { len, capacity, parsePitch, keyAlters, BEAMS } from './model.js';
 
 const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BOTTOM = { t: 4 * 7 + 2, b: 2 * 7 + 4 }; // diatonic number of each staff's bottom line (E4, G2)
@@ -215,7 +215,7 @@ export function drawVoice(out, items, o) {
   const groups = [];
   let g = null;
   items.forEach((it) => {
-    const beamable = it.ds && (it.e.d === '8' || it.e.d === '16');
+    const beamable = it.ds && !!BEAMS[it.e.d];
     const beat = Math.floor(it.t / beatLen), endsInBeat = Math.floor((it.t + len(it.e) - 1) / beatLen) === beat;
     if (beamable && endsInBeat && g && g.beat === beat && g.last === it.t) { g.its.push(it); g.last = it.t + len(it.e); }
     else { if (g && g.its.length > 1) groups.push(g); g = beamable && endsInBeat ? { beat, its: [it], last: it.t + len(it.e) } : null; }
@@ -232,7 +232,7 @@ export function drawVoice(out, items, o) {
     const pts = gr.its.map(it => ({ it, sx: up ? it.x + NW - stemW / 2 : it.x + stemW / 2, ny: yOf(up ? it.ds[it.ds.length - 1] : it.ds[0]), ny2: yOf(up ? it.ds[0] : it.ds[it.ds.length - 1]) }));
     const a = pts[0], b = pts[pts.length - 1];
     let slope = (b.ny - a.ny) / Math.max(1, b.sx - a.sx); slope = Math.max(-0.12, Math.min(0.12, slope)) * 0.6;
-    const has16 = gr.its.some(it => it.e.d === '16'), minLen = (has16 ? 3.6 : 3.1) * sp;
+    const lv = Math.max(...gr.its.map(it => BEAMS[it.e.d] || 1)), minLen = (2.35 + 0.75 * lv) * sp;
     let y0 = up ? Infinity : -Infinity;
     for (const p of pts) { const need = up ? p.ny - minLen : p.ny + minLen; const at = need - slope * (p.sx - a.sx); y0 = up ? Math.min(y0, at) : Math.max(y0, at); }
     // keep beams from floating far off the staff
@@ -241,17 +241,19 @@ export function drawVoice(out, items, o) {
     const bt = 0.5 * sp, off = up ? 1 : -1;
     const poly = (x1, x2, yo) => `<polygon class="ink" points="${n(x1)},${n(gr.beamY(x1) + yo)} ${n(x2)},${n(gr.beamY(x2) + yo)} ${n(x2)},${n(gr.beamY(x2) + yo + bt * off)} ${n(x1)},${n(gr.beamY(x1) + yo + bt * off)}"/>`;
     out.push(poly(a.sx - stemW / 2, b.sx + stemW / 2, 0));
-    // secondary beams for 16ths
-    const sec = 0.75 * sp * off;
-    pts.forEach((p, k) => {
-      if (p.it.e.d !== '16') return;
-      const nx = pts[k + 1], pv = pts[k - 1];
-      if (nx && nx.it.e.d === '16') out.push(poly(p.sx - stemW / 2, nx.sx + stemW / 2, sec));
-      else if (!(pv && pv.it.e.d === '16')) {
-        const stub = 1.1 * sp;
-        if (nx) out.push(poly(p.sx - stemW / 2, p.sx + stub, sec)); else out.push(poly(p.sx - stub, p.sx + stemW / 2, sec));
-      }
-    });
+    // secondary (16th) and third (32nd) beams
+    for (let level = 2; level <= 3; level++) {
+      const sec = 0.75 * sp * off * (level - 1), has = (p) => p && (BEAMS[p.it.e.d] || 0) >= level;
+      pts.forEach((p, k) => {
+        if (!has(p)) return;
+        const nx = pts[k + 1], pv = pts[k - 1];
+        if (has(nx)) out.push(poly(p.sx - stemW / 2, nx.sx + stemW / 2, sec));
+        else if (!has(pv)) {
+          const stub = 1.1 * sp;
+          if (nx) out.push(poly(p.sx - stemW / 2, p.sx + stub, sec)); else out.push(poly(p.sx - stub, p.sx + stemW / 2, sec));
+        }
+      });
+    }
   }
 
   items.forEach((it, idx) => {
@@ -305,13 +307,16 @@ export function drawVoice(out, items, o) {
       const yLo = yOf(ds[0]), yHi = yOf(ds[ds.length - 1]);
       let y1, y2;
       if (it.beamed) { y1 = dir === 1 ? yLo : yHi; y2 = it.beamed.beamY(sx); }
-      else if (dir === 1) { y1 = yLo; y2 = Math.min(yHi - 3.4 * sp, mid); if (e.d === '16') y2 -= 0.5 * sp; }
-      else { y1 = yHi; y2 = Math.max(yLo + 3.4 * sp, mid); if (e.d === '16') y2 += 0.5 * sp; }
+      else if (dir === 1) { y1 = yLo; y2 = Math.min(yHi - 3.4 * sp, mid); if (e.d === '16') y2 -= 0.5 * sp; if (e.d === '32') y2 -= 1.2 * sp; }
+      else { y1 = yHi; y2 = Math.max(yLo + 3.4 * sp, mid); if (e.d === '16') y2 += 0.5 * sp; if (e.d === '32') y2 += 1.2 * sp; }
       parts.push(`<line class="stem" x1="${n(sx)}" x2="${n(sx)}" y1="${n(y1)}" y2="${n(y2)}" stroke-width="${n(stemW)}"/>`);
-      if (!it.beamed && (e.d === '8' || e.d === '16')) {
+      if (!it.beamed && BEAMS[e.d]) {
         const fl = e.d === '8' ? 'flag8' : 'flag16', fh = (e.d === '8' ? 3.0 : 3.1) * sp;
-        if (dir === 1) parts.push(glyph(fl, sx - stemW / 2, y2, fh).svg);
-        else parts.push(glyph(fl, sx - stemW / 2, y2 - fh, fh, { flipY: true }).svg);
+        const reps = e.d === '32' ? [0, 0.75 * sp] : [0];
+        for (const o of reps) {
+          if (dir === 1) parts.push(glyph(fl, sx - stemW / 2, y2 + o, fh).svg);
+          else parts.push(glyph(fl, sx - stemW / 2, y2 - fh - o, fh, { flipY: true }).svg);
+        }
       }
     }
     // tie to the next event of this staff (may be in the next bar)
