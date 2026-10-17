@@ -47,13 +47,15 @@ export function newScore() {
 }
 
 export const filled = (evs) => evs.reduce((a, e) => a + len(e), 0);
+export const staves = (score) => score.staves || ['t', 'b'];
+export const blankBar = (score) => Object.fromEntries(staves(score).map(s => [s, []]));
 
 // Insert an event for one hand at position (m, i). Overflow flows into the next bar (new bars as needed).
 export function insertEvent(score, staff, m, i, ev) {
   const cap = capacity(score);
   let mi = m, idx = i;
   while (true) {
-    if (!score.measures[mi]) score.measures.push({ t: [], b: [] });
+    if (!score.measures[mi]) score.measures.push(blankBar(score));
     const evs = score.measures[mi][staff];
     if (idx > evs.length) idx = evs.length;
     if (filled(evs) + len(ev) <= cap) { evs.splice(idx, 0, ev); return { m: mi, i: idx }; }
@@ -74,7 +76,7 @@ export function insertEvent(score, staff, m, i, ev) {
 function reflow(score, staff, m, evs) {
   const cap = capacity(score);
   while (evs.length) {
-    if (!score.measures[m]) score.measures.push({ t: [], b: [] });
+    if (!score.measures[m]) score.measures.push(blankBar(score));
     const cur = score.measures[m][staff];
     cur.unshift(...evs); evs = [];
     while (filled(cur) > cap && cur.length > 1) evs.unshift(cur.pop());
@@ -91,7 +93,7 @@ export function removeEvent(score, staff, m, i) {
 export function trimEmptyEnd(score) {
   while (score.measures.length > 1) {
     const last = score.measures[score.measures.length - 1];
-    if (last.t.length || last.b.length) break;
+    if (staves(score).some(s => last[s] && last[s].length)) break;
     score.measures.pop();
   }
 }
@@ -112,20 +114,21 @@ export function transposeScore(score, semis) {
   // +1 semitone = +7 on the circle of fifths (kept within -6..6)
   let f = score.keyFifths + 7 * semis; f = ((f % 12) + 12) % 12; if (f > 6) f -= 12;
   score.keyFifths = f;
-  for (const m of score.measures) for (const st of ['t', 'b']) for (const e of m[st]) {
+  for (const m of score.measures) for (const st of staves(score)) for (const e of m[st]) {
     if (e.notes) e.notes = e.notes.map(p => spell(midiOf(p) + semis, f));
   }
   return score;
 }
 
 // Flatten into time-ordered playable notes: [{ time (in 32nds), dur, midi[] , ref }]
-export function timeline(score) {
+export function timeline(score, pitches = (e) => (e.notes || []).map(midiOf)) {
   const cap = capacity(score), out = [];
   score.measures.forEach((m, mi) => {
-    for (const st of ['t', 'b']) {
+    for (const st of staves(score)) {
       let t = mi * cap;
       m[st].forEach((e, i) => {
-        if (!e.rest && e.notes && e.notes.length) out.push({ time: t, dur: len(e), midi: e.notes.map(midiOf), tie: !!e.tie, ref: { m: mi, s: st, i } });
+        const mids = e.rest ? [] : pitches(e);
+        if (mids.length) out.push({ time: t, dur: len(e), midi: mids, tie: !!e.tie, ref: { m: mi, s: st, i } });
         t += len(e);
       });
     }
@@ -154,9 +157,10 @@ export function restsFor(L) {
 export function rebar(score, newTime) {
   const oldCap = capacity(score);
   const lastIdx = score.measures.length - 1;
-  const streams = { t: [], b: [] };
+  const sts = staves(score);
+  const streams = Object.fromEntries(sts.map(s => [s, []]));
   score.measures.forEach((m, mi) => {
-    for (const st of ['t', 'b']) {
+    for (const st of sts) {
       const gap = oldCap - filled(m[st]);
       streams[st].push(...m[st]);
       if (gap > 0 && mi < lastIdx) streams[st].push(...restsFor(gap));
@@ -164,16 +168,16 @@ export function rebar(score, newTime) {
   });
   score.time = newTime;
   const cap = capacity(score);
-  const out = { t: [[]], b: [[]] };
-  for (const st of ['t', 'b']) {
+  const out = Object.fromEntries(sts.map(s => [s, [[]]]));
+  for (const st of sts) {
     for (const e of streams[st]) {
       let bar = out[st][out[st].length - 1];
       if (bar.length && filled(bar) + len(e) > cap) { bar = []; out[st].push(bar); }
       bar.push(e);
     }
   }
-  const n = Math.max(out.t.length, out.b.length);
-  score.measures = Array.from({ length: n }, (_, i) => ({ t: out.t[i] || [], b: out.b[i] || [] }));
+  const n = Math.max(...sts.map(s => out[s].length));
+  score.measures = Array.from({ length: n }, (_, i) => Object.fromEntries(sts.map(s => [s, out[s][i] || []])));
   return score;
 }
 

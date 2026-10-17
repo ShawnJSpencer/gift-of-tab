@@ -515,10 +515,10 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
     const notes = h('textarea', { rows: 3, placeholder: 'Notes to self (fingering, pedalling, feel…)' }, song.notes || '');
     const body = h('div', { class: 'form' },
       field('Title', title), field('Artist', artist),
-      h('div', { class: 'row2' }, field('Key signature', keySel), field('When the key changes', keyMode)),
-      h('div', { class: 'row2' }, field('Time signature', timeSel, 'Bars are re-filled to fit'), field('Tempo (BPM)', bpmIn, 'Quarter-note beats per minute')),
+      h('div', { class: 'two' }, field('Key signature', keySel), field('When the key changes', keyMode)),
+      h('div', { class: 'two' }, field('Time signature', timeSel, 'Bars are re-filled to fit'), field('Tempo (BPM)', bpmIn, 'Quarter-note beats per minute')),
       field('Notes', notes),
-      h('div', { class: 'row between' },
+      h('div', { class: 'row end' },
         btn('Delete song', async () => { if (await confirmBox(`Delete "${song.title}"? This can't be undone.`)) { s.close(); stopPlay(); S.deleteSong(song.id); nav('#/'); } }, { cls: 'danger ghost', icon: 'trash' }),
         btn('Save', () => {
           pushUndo();

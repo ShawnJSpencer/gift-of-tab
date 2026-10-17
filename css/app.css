@@ -562,3 +562,21 @@ html.stage .score-svg .ev.playing, html.stage .score-svg .ev.playing .stem { fil
 .pk-lab { position: absolute; bottom: 5px; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 900; color: #9a8a85; pointer-events: none; }
 @media (max-height: 700px) { .pk-inner { height: 92px; } }
 html.stage .stage-badge.on { color: #fff; }
+
+/* ---------- tech tab */
+.tech-svg .ko { fill: var(--paper); }
+.tech-svg .fret { fill: var(--ink); font-family: var(--font); font-weight: 800; }
+.tech-svg .tabclef { fill: var(--ink); font-family: var(--font); font-weight: 900; }
+.tech-svg .techline { stroke: var(--ink); fill: none; }
+.tech-svg .techtxt { fill: var(--ink); font-family: var(--font); font-weight: 800; }
+.tech-svg .clef8 { font-family: var(--font); font-weight: 800; }
+.tech-svg .colsel { fill: rgba(228, 151, 42, .16); }
+.tech-svg .strsel { fill: none; stroke: var(--rust); }
+html.stage .tech-svg .strsel { stroke: var(--amber); }
+.tech-svg .secl rect { fill: var(--teal); }
+.tech-svg .secl text { fill: #fff; font-family: var(--display); letter-spacing: .04em; }
+.tech-svg .ev.sel .fret { fill: var(--rust); }
+html.stage .tech-svg .ev.sel .fret { fill: var(--amber); }
+.tech-svg .ev.playing .fret { fill: var(--teal-d); }
+html.stage .tech-svg .ev.playing .fret { fill: var(--mint); }
+.tech-svg .ev.sel .ko, .tech-svg .ev.playing .ko { fill: var(--paper); }

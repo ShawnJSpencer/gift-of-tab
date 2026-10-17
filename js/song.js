@@ -7,6 +7,7 @@ import { chordDiagram, emojiRain, logo } from './art.js';
 import { convertChordSheet } from './importer.js';
 import * as V from './versions.js';
 import { tuningPicker, keyPicker } from './pickers.js';
+import { fromTab } from './score/tech.js';
 
 const TECH = ['h', 'p', '/', '\\', 'b', 'r', '~', 'x', '( )', '<>', 'PM', 's', 't'];
 const TECH_HELP = { h: 'Hammer-on', p: 'Pull-off', '/': 'Slide up', '\\': 'Slide down', b: 'Bend', r: 'Release', '~': 'Vibrato', x: 'Muted / dead note', '( )': 'Ghost note', '<>': 'Harmonic', PM: 'Palm mute', s: 'Slide', t: 'Tap' };
@@ -697,6 +698,7 @@ export function songScreen(root, songId, ctx = {}, nav) {
       field('Notes', notes),
       h('div', { class: 'row end' },
         btn('Delete song', async () => { if (await confirmBox(`Delete "${song.title}"? This can't be undone.`)) { s.close(); S.deleteSong(song.id); nav('#/'); } }, { cls: 'danger ghost', icon: 'trash' }),
+        song.instrument !== 'piano' ? btn('Make a Tech tab copy', () => { s.close(); makeTech(); }, { cls: 'ghost', icon: 'music', title: 'Copy this tab into a Tech tab with rhythm' }) : null,
         btn('Duplicate', () => { const c = JSON.parse(JSON.stringify(song)); c.id = uid(); c.title += ' (copy)'; c.created = Date.now(); S.putSong(c); s.close(); nav('#/song/' + c.id + '?edit=1'); }, { cls: 'ghost', icon: 'copy' }),
         btn('Save', () => {
           pushUndo();
@@ -718,6 +720,16 @@ export function songScreen(root, songId, ctx = {}, nav) {
         }, { cls: 'primary', icon: 'check' })));
     const s = sheet('Song settings', body);
     if (instrument === 'piano') capoRow.style.display = 'none';
+  }
+
+  // Copy into a Tech tab (rhythm is guessed from the beat spacing)
+  function makeTech() {
+    const c = { id: uid(), title: song.title + ' (Tech)', artist: song.artist, instrument: song.instrument, tuning: song.tuning.slice(), tuningName: song.tuningName,
+      capo: song.capo || 0, bpm: song.bpm || null, key: song.key || null, beats: song.beats || 4, subdiv: song.subdiv || 2, notes: song.notes || '', blocks: [],
+      kind: 'tech', tech: fromTab(song), created: Date.now(), updated: Date.now() };
+    S.putSong(c);
+    toast('🎼 Tech tab made — the rhythm is a best guess from the spacing, so check it by ear', 4500);
+    nav('#/song/' + c.id);
   }
 
   // ---------- transpose / auto-scroll

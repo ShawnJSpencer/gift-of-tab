@@ -5,6 +5,7 @@ import * as Sync from './sync.js';
 import { logo, countdownParts, emojiRain } from './art.js';
 import { newSong } from './model.js';
 import { newScore } from './score/model.js';
+import { newTech } from './score/tech.js';
 import { importText, guessMeta, findBpm, findSongMeta } from './importer.js';
 import { tuningPicker, keyPicker, capoPicker } from './pickers.js';
 import { hasMine } from './versions.js';
@@ -200,20 +201,28 @@ export function newSongSheet(nav) {
   const make = (inst, kind) => {
     const s = newSong(inst);
     if (kind === 'score') { s.kind = 'score'; s.blocks = []; s.score = newScore(); s.bpm = 80; s.key = 'C'; }
+    if (kind === 'tech') { s.kind = 'tech'; s.blocks = []; s.tech = newTech(); s.bpm = 90; s.key = 'C'; }
     S.putSong(s); sh.close(); nav('#/song/' + s.id + '?edit=1');
   };
   const card = (emoji, title, sub, fn, cls = '') => h('button', { type: 'button', class: 'card inst ' + cls, onclick: fn }, h('span', { class: 'big-emoji' }, emoji), h('b', {}, title), h('span', {}, sub));
   const body = h('div', {});
+  const back = () => h('div', { class: 'row' }, btn('Back', instruments, { cls: 'ghost', icon: 'back' }));
   const instruments = () => { body.innerHTML = ''; body.append(h('div', { class: 'inst-pick' },
-    card('🎸', 'Guitar', '6-string · standard EADGBE', () => make('guitar')),
-    card('🪕', 'Ukulele', 'GCEA', () => make('ukulele')),
+    card('🎸', 'Guitar', '6-string · standard EADGBE', () => tabChoice('guitar')),
+    card('🪕', 'Ukulele', 'GCEA', () => tabChoice('ukulele')),
     card('🎹', 'Piano', 'Sheet music or chords', pianoChoice))); };
-  // Piano gets a choice each time: full sheet music, or a simple chords & lyrics chart
+  // Guitar & ukulele: a quick tab, or a Tech tab with rhythm, time & key signatures and notation
+  const tabChoice = (inst) => { body.innerHTML = ''; body.append(
+    h('div', { class: 'inst-pick piano-pick' },
+      card(inst === 'guitar' ? '🎸' : '🪕', 'Tab', 'Fret numbers, chords & lyrics — quick to write', () => make(inst)),
+      card('🎼', 'Tech tab', 'Rhythm under the tab, time & key signatures, optional notation — all the technical details', () => make(inst, 'tech'), 'score-card')),
+    back()); };
+  // Piano: full sheet music, or a simple chords & lyrics chart
   const pianoChoice = () => { body.innerHTML = ''; body.append(
     h('div', { class: 'inst-pick piano-pick' },
       card('🎼', 'Sheet music', 'Notes on a grand staff — write, play back, perform', () => make('piano', 'score'), 'score-card'),
       card('🎹', 'Chords & lyrics', 'Chord names over the words', () => make('piano'))),
-    h('div', { class: 'row' }, btn('Back', instruments, { cls: 'ghost', icon: 'back' }))); };
+    back()); };
   instruments();
   const sh = sheet('New tab', body, { cls: 'small' });
 }
