@@ -55,7 +55,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
   const screen = h('div', { class: 'song-screen score-screen' }, scroll, handle, topbar, keypad);
   root.append(screen);
   const wrap = h('div', { class: 'score-wrap' });
-  const seek = transport({ bars: 1, label: (bar, n) => `Bar ${bar + 1} of ${n}`, onSeek: (bar) => startPlay(bar) });
+  const seek = transport({ bars: 1, label: (bar, n) => `Bar ${bar + 1} of ${n}`, onSeek: (bar) => seekTo(bar), onPause: () => (player ? pausePlay() : resumePlay()) });
   screen.append(seek.el);
 
   function applyStage() { document.documentElement.classList.toggle('stage', !!S.pref('stage', false)); }
@@ -77,7 +77,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
       tb('', 'home', () => nav('#/'), 'Home'),
       sep(),
       mode === 'view' ? tb('Edit', 'edit', () => setMode('edit'), 'Edit this music', 'accent') : tb('Done', 'check', () => setMode('view'), 'Finish editing', 'accent'),
-      tb(player ? 'Stop' : 'Play', player ? 'pause' : 'play', togglePlay, player ? 'Stop playback' : 'Play the music', 'play-btn'),
+      tb(player ? 'Stop' : pausedAt != null ? 'Resume' : 'Play', player ? 'pause' : 'play', togglePlay, player ? 'Stop playback' : pausedAt != null ? 'Carry on from where you paused' : 'Play the music', 'play-btn'),
     ];
     if (playlist) items.push(sep(),
       tb('', 'back', () => goPl(-1), 'Previous song in playlist'),
@@ -471,16 +471,32 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
   }
 
   // ---------- playback
-  function togglePlay() { player ? stopPlay() : startPlay(); }
-  function startPlay(fromBar) {
+  // pause keeps your place; Stop starts over next time
+  let pausedAt = null, lastT = 0;
+  function togglePlay() { if (player) stopPlay(); else if (pausedAt != null) resumePlay(); else startPlay(); }
+  function pausePlay() {
+    if (!player) return;
+    player.stop(); player = null; playing = false;
+    pausedAt = lastT;
+    seek.setPaused(true); buildBar();
+  }
+  function resumePlay() { if (pausedAt == null) return startPlay(); const t = pausedAt; startPlay(null, t); }
+  function seekTo(bar) {
+    const s0 = sc(), cap0 = M.capacity(s0);
+    if (pausedAt != null && !player) { pausedAt = lastT = bar * cap0; seek.set(bar); return; } // stay paused at the new spot
+    startPlay(bar);
+  }
+  function startPlay(fromBar, fromT) {
     const s = sc();
     if (!s.measures.some(x => x.t.length || x.b.length)) return toast('Add some notes first');
     if (player) { player.stop(); player = null; }
     const cap = M.capacity(s);
-    const from = (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
+    const from = fromT != null ? fromT : (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
+    pausedAt = null; lastT = from; seek.setPaused(false);
     wrap.classList.add('is-playing');
     seek.setBars(s.measures.length); seek.set(Math.floor(from / cap)); seek.toggle(true);
     player = A.play(s, song.bpm || 80, from, (refs, t) => {
+      lastT = t;
       seek.set(Math.min(s.measures.length - 1, Math.floor(t / cap)));
       wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
       let first = null;
@@ -498,7 +514,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
     playing = false;
     wrap.classList.remove('is-playing');
     wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
-    seek.toggle(false);
+    seek.toggle(false); seek.setPaused(false); pausedAt = null;
     buildBar();
   }
 

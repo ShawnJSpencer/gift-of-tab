@@ -609,3 +609,9 @@ html.stage .tech-svg .ev.playing .playbox { fill: rgba(197, 222, 211, .10); stro
 @media (max-width: 600px) { .tp-label { min-width: 0; font-size: .78rem; } }
 .tag.tech { background: var(--teal); color: #fff; }
 .fc-tag { align-self: flex-start; font-size: .7rem; margin-top: 2px; }
+
+.tp-pp { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--amber); color: #3b2a12; display: grid; place-items: center; padding: 0; cursor: pointer; }
+.tp-pp svg { width: 20px; height: 20px; fill: currentColor; }
+.tp-pp:active { transform: scale(.94); }
+.transport.paused .tp-pp { background: #fff; color: var(--brown); }
+.transport.paused .tp-label::after { content: ' · paused'; opacity: .75; }
