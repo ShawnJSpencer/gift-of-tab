@@ -1,0 +1,22 @@
+name: Keep reminders running
+
+# GitHub pauses scheduled jobs in a repo with no activity for 60 days.
+# This makes a tiny commit once a month so the reminders never stop.
+on:
+  schedule:
+    - cron: '17 15 1 * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u > .github/keepalive.txt
+          git config user.name "Gift of Tab bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive.txt
+          git commit -m "Keep reminders running" && git push

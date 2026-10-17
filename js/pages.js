@@ -7,6 +7,7 @@ import { newSong } from './model.js';
 import { importText, guessMeta, findBpm, findSongMeta } from './importer.js';
 import { tuningPicker, keyPicker, capoPicker } from './pickers.js';
 import { hasMine } from './versions.js';
+import * as Push from './push.js';
 
 const instEmoji = { guitar: '🎸', ukulele: '🪕', piano: '🎹' };
 
@@ -400,6 +401,7 @@ export function settingsScreen(root, nav) {
     const stageIn = h('input', { value: S.db.settings.stageName || 'Olden Gray', placeholder: 'Olden Gray', onchange: (e) => { S.setSetting('stageName', e.target.value.trim() || 'Olden Gray'); toast('Stage name saved ★'); } });
     page.append(h('div', { class: 'card form' }, h('h2', {}, '★ Stage name'),
       field('Your stage name', stageIn, 'Shown on the gold star in every song. Tap it to switch between the original tab and your own version (your key, your chord choices).')));
+    page.append(remindersCard(render));
     page.append(h('div', { class: 'card form' }, h('h2', {}, 'Performance'),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('tapPage', true), onchange: (e) => S.setPref('tapPage', e.target.checked) }), h('span', {}, 'Tap the bottom of the screen to page down (top to page up) while viewing a tab')),
       h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: S.pref('stage', false), onchange: (e) => S.setPref('stage', e.target.checked) }), h('span', {}, 'Stage mode (dark screen) for tabs')),
@@ -424,4 +426,47 @@ export function settingsScreen(root, nav) {
         }, { cls: 'ghost' }))));
   }
   render();
+}
+
+// ---------- Reminders (push notifications)
+function remindersCard(rerender) {
+  const n = S.db.settings.notify || {};
+  const setN = (k, v) => { S.setSetting('notify', { ...(S.db.settings.notify || {}), [k]: v, tz: (S.db.settings.notify || {}).tz || Intl.DateTimeFormat().resolvedOptions().timeZone }); };
+  const st = Push.status();
+  const card = h('div', { class: 'card form reminders' }, h('h2', {}, '🔔 Reminders'));
+  const devices = Object.values(S.db.push || {}).filter(d => d && d.sub && !d.off).map(d => d.name);
+  if (!Sync.isConnected()) card.append(h('p', { class: 'hint err' }, 'Turn on Sync above first — the reminder service reads your practice from your synced data.'));
+  const row = h('div', { class: 'row' });
+  const busy = (b, label) => { b.disabled = true; b.lastChild.textContent = label; };
+  if (st === 'needs-install') {
+    card.append(h('p', {}, 'On iPhone and iPad, reminders only work when the app is on your Home Screen:'),
+      h('ol', { class: 'steps' }, h('li', {}, 'In Safari, tap Share (the square with the arrow) → Add to Home Screen.'), h('li', {}, 'Open The Gift of Tab from the new icon, then come back here and turn reminders on.')));
+  } else if (st === 'unsupported') {
+    card.append(h('p', { class: 'hint' }, 'This browser can\'t receive notifications.'));
+  } else if (st === 'blocked') {
+    card.append(h('p', { class: 'hint err' }, 'Notifications are blocked for this app. Allow them in your device Settings → Notifications → Gift of Tab, then come back.'));
+  } else if (st === 'off') {
+    const b = btn('Turn on reminders for this device', async () => {
+      busy(b, 'Turning on…');
+      try { await Push.enable(); toast('Reminders are on 🔔'); Sync.syncNow(); } catch (e) { toast(e.message || String(e), 4500); }
+      rerender();
+    }, { cls: 'primary', icon: 'star' });
+    row.append(b);
+  } else {
+    card.append(h('p', { class: 'ok-line' }, '✓ Reminders are on for this device.'));
+    row.append(btn('Test on this device', async () => { try { await Push.localTest(); } catch (e) { toast(e.message); } }, { cls: 'small' }),
+      btn('Turn off for this device', async () => { await Push.disable(); toast('Reminders off for this device'); rerender(); }, { cls: 'small ghost' }));
+  }
+  if (row.children.length) card.append(row);
+  if (devices.length) card.append(h('p', { class: 'hint' }, 'Devices getting reminders: ' + devices.join(', ')));
+
+  const time = h('input', { type: 'time', value: n.time || '20:00', onchange: (e) => setN('time', e.target.value || '20:00') });
+  const sw = (key, label, extra) => h('label', { class: 'switch-row' },
+    h('input', { type: 'checkbox', checked: n[key] !== false, onchange: (e) => setN(key, e.target.checked) }), h('span', {}, label), extra || null);
+  card.append(
+    sw('practice', 'Practice reminder if I haven\'t played by', time),
+    sw('concert', 'Concert countdown (100, 30, 7 days… and show day)'),
+    sw('weekly', 'Weekly summary on Sunday evening'),
+    h('p', { class: 'hint' }, 'Sent by a free scheduled job on your GitHub account, which checks every 30 minutes — so a reminder can arrive up to about half an hour after the time you set.'));
+  return card;
 }

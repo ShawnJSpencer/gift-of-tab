@@ -1,0 +1,31 @@
+name: Reminders
+
+# Every 30 minutes the job checks whether a reminder is due (practice at your chosen time if you
+# haven't played, concert countdown milestones, Sunday weekly summary) and sends it to your devices.
+on:
+  schedule:
+    - cron: '11,41 * * * *'
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Send a test notification now'
+        type: boolean
+        default: true
+
+concurrency: reminders
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-save --prefix .github/notify web-push@3.6.7
+      - run: node .github/notify/send.mjs
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          TEST_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.test && '1' || '' }}
