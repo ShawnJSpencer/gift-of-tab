@@ -68,7 +68,9 @@ export function homeScreen(root, nav) {
         h('button', { class: 'card file-card imp', type: 'button', onclick: () => importSheet(nav) }, icon('import'), h('b', {}, 'Import tab')),
         recent.map(s => h('button', { class: 'card file-card', type: 'button', onclick: () => nav('#/song/' + s.id) },
           h('span', { class: 'fc-inst' }, songEmoji(s)),
-          h('b', { class: 'fc-title' }, s.title), h('span', { class: 'fc-artist' }, s.artist || '—'), h('span', { class: 'fc-when' }, 'Edited ' + fmtDate(s.updated)))))));
+          h('b', { class: 'fc-title' }, s.title), h('span', { class: 'fc-artist' }, s.artist || '—'),
+          s.kind === 'tech' ? h('span', { class: 'tag tech fc-tag' }, 'Tech tab') : s.kind === 'score' ? h('span', { class: 'tag tech fc-tag' }, 'Sheet music') : null,
+          h('span', { class: 'fc-when' }, 'Edited ' + fmtDate(s.updated)))))));
 
     // --- library
     const seg = (k, label) => h('button', { type: 'button', class: 'seg-btn' + (view.tab === k ? ' on' : ''), onclick: () => { view.tab = k; S.setPref('home.tab', k); render(); } }, label);
@@ -119,6 +121,7 @@ function songRow(s, nav, rerender) {
   return h('div', { class: 'song-row', role: 'button', tabindex: 0, onclick: () => nav('#/song/' + s.id), onkeydown: (e) => { if (e.key === 'Enter') nav('#/song/' + s.id); } },
     h('span', { class: 'sr-inst' }, songEmoji(s)),
     h('div', { class: 'sr-main' }, h('b', {}, s.title), h('span', {}, s.artist || '—')),
+    s.kind === 'tech' ? h('span', { class: 'tag tech' }, '🎼 Tech tab') : s.kind === 'score' ? h('span', { class: 'tag tech' }, '🎼 Sheet music') : null,
     hasMine(s) ? h('span', { class: 'tag mine' }, '★ ' + ((S.db.settings.stageName || '').trim() || 'Olden Gray')) : null,
     s.capo ? h('span', { class: 'tag' }, 'Capo ' + s.capo) : null,
     s.instrument !== 'piano' && s.tuningName && !/^Standard/.test(s.tuningName) ? h('span', { class: 'tag t2' }, s.tuningName) : null,

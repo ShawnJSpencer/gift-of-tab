@@ -9,6 +9,7 @@ import { renderTech, stringAt } from './techrender.js';
 import { newTech, pitchesOf, fretOf } from './tech.js';
 import * as A from './audio.js';
 import { G } from './glyphs.js';
+import { transport } from './transport.js';
 
 const TIMES = [[4, 4], [3, 4], [2, 4], [6, 8], [2, 2], [5, 4], [3, 8], [9, 8], [12, 8]];
 const TECH = ['h', 'p', '/', '\\', 'b', 'r', '~', 'x', '( )', '<>', 'PM'];
@@ -55,6 +56,10 @@ export function techScreen(root, songId, ctx = {}, nav) {
   const screen = h('div', { class: 'song-screen score-screen tech-screen' }, scroll, handle, topbar, keypad);
   root.append(screen);
   const wrap = h('div', { class: 'score-wrap' });
+  // seek bar while playing (with the section you're in)
+  const sectionAt = (bar) => { let name = ''; for (let m = 0; m <= bar && m < sc().measures.length; m++) for (const e of sc().measures[m].g) if (e.section) name = e.section; return name; };
+  const seek = transport({ bars: 1, label: (bar, n) => `Bar ${bar + 1} of ${n}${sectionAt(bar) ? ' · ' + sectionAt(bar) : ''}`, onSeek: (bar) => startPlay(bar) });
+  screen.append(seek.el);
 
   function applyStage() { document.documentElement.classList.toggle('stage', !!S.pref('stage', false)); }
   applyStage();
@@ -274,6 +279,9 @@ export function techScreen(root, songId, ctx = {}, nav) {
   // ---------- taps
   wrap.addEventListener('click', (ev) => {
     if (!layout) return;
+    // tap a section name to play from there (or jump to it while playing)
+    const secEl = mode !== 'edit' && ev.target.closest && ev.target.closest('.secl');
+    if (secEl) { startPlay(+secEl.dataset.m); return; }
     const r = wrap.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
     const g = ev.target.closest && ev.target.closest('.ev');
     if (mode !== 'edit') {
@@ -373,11 +381,15 @@ export function techScreen(root, songId, ctx = {}, nav) {
 
   // ---------- playback
   function togglePlay() { player ? stopPlay() : startPlay(); }
-  function startPlay() {
+  function startPlay(fromBar) {
     if (!sc().measures.some(x => x.g.some(e => !e.rest))) return toast('Add some notes first');
-    const from = sel ? sel.m * M.capacity(sc()) : 0;
+    if (player) { player.stop(); player = null; }
+    const cap = M.capacity(sc());
+    const from = (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
     wrap.classList.add('is-playing');
-    player = A.play(sc(), song.bpm || 90, from, (refs) => {
+    seek.setBars(sc().measures.length); seek.set(Math.floor(from / cap)); seek.toggle(true);
+    player = A.play(sc(), song.bpm || 90, from, (refs, t) => {
+      seek.set(Math.min(sc().measures.length - 1, Math.floor(t / cap)));
       wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
       let first = null;
       for (const r of refs) wrap.querySelectorAll(`.ev[data-m="${r.m}"][data-i="${r.i}"]`).forEach(el => { el.classList.add('playing'); first = first || el; });
@@ -393,6 +405,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
     playing = false;
     wrap.classList.remove('is-playing');
     wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
+    seek.toggle(false);
     buildBar();
   }
 

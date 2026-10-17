@@ -47,7 +47,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
     let img = await raster(page, vp);
     { const tl = items.map(i => i.s).join(' ').match(/tuning\s*:?\s*((?:[A-G][#b]?(?=\s|$)\s*){4,7})/i); if (tl && !tuningText) tuningText = tl[1].match(/[A-G][#b]?/g); }
     if (!expect) { const tl = items.map(i => i.s).join(' ').match(/tuning\s*:?\s*((?:[A-G][#b]?(?=\s|$)\s*){4,7})/); if (tl) { const n = tl[1].match(/[A-G][#b]?/g).length; if (n === 6 || n === 4) expect = n; } }
-    let res = analysePage(items.map(i => ({ ...i })), img, expect);
+    let res = analysePage(items.map(i => ({ ...i })), img, expect, tuningText);
     // tab drawn as pictures reads most reliably when the strings are ~28px apart — re-read finer if needed
     if (res.ocr && res.sp && Math.abs(res.sp - 28) > 1) {
       const k = Math.min(28 / res.sp, 2600 / vp.width);
@@ -56,7 +56,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
         img = await raster(page, vp2);
         const fresh = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp2, i));
         if (p === 1) takeTitle(fresh, vp2.height);
-        res = analysePage(fresh, img, expect);
+        res = analysePage(fresh, img, expect, tuningText);
       }
     } else if (!res.ocr && res.sp && res.sp < 18 && res.staves) {
       // thin beams need a sharper picture to count: read small staffs again a bit larger
@@ -66,7 +66,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
         img = await raster(page, vp2);
         const fresh = tc.items.filter(i => i.str && i.str.trim()).map(i => toItem(L, vp2, i));
         if (p === 1) takeTitle(fresh, vp2.height);
-        res = analysePage(fresh, img, expect);
+        res = analysePage(fresh, img, expect, tuningText);
       }
     }
     techStaffs.push(...(res.tech || []));
@@ -223,7 +223,7 @@ function findBars({ W, dark }, st) {
 }
 
 // ---------- page analysis
-function analysePage(items, img, expect) {
+function analysePage(items, img, expect, pageTuning = null) {
   const all = groupStaves(findLines(img), img.H);
   // ASCII tabs drawn with dashes are text, not graphics — leave them to the text path
   const inBand = (st, it, pad) => it.cy >= st.top - pad && it.cy <= st.bot + pad;
@@ -275,6 +275,8 @@ function analysePage(items, img, expect) {
         it.used = true; dashes.push({ x: it.x + it.w / 2, cy: it.cy }); // word-break dashes between lyric syllables
       }
     }
+    // no string names beside the staff: use the 'Tuning:' line (listed low → high; the staff reads high → low)
+    if (pageTuning && pageTuning.length === st.n && tuning.filter(Boolean).length !== st.n) pageTuning.slice().reverse().forEach((t, i) => { tuning[i] = t; });
     let usedOcrHere = false;
     if (!notes.length) { notes.push(...ocrStaff(img, st, bars, x0, x1)); if (notes.length) usedOcr = usedOcrHere = true; }
     if (!notes.length && !lyrics.length) continue; // (a line with only lyrics — guitar resting — is kept)

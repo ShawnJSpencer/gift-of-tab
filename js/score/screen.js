@@ -8,6 +8,7 @@ import { G } from './glyphs.js';
 import * as M from './model.js';
 import { render, pitchAt } from './render.js';
 import * as A from './audio.js';
+import { transport } from './transport.js';
 
 const TIMES = [[4, 4], [3, 4], [2, 4], [6, 8], [2, 2], [5, 4], [3, 8], [9, 8], [12, 8]];
 const KB_LO = 36, KB_HI = 96; // C2 … C7
@@ -54,6 +55,8 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
   const screen = h('div', { class: 'song-screen score-screen' }, scroll, handle, topbar, keypad);
   root.append(screen);
   const wrap = h('div', { class: 'score-wrap' });
+  const seek = transport({ bars: 1, label: (bar, n) => `Bar ${bar + 1} of ${n}`, onSeek: (bar) => startPlay(bar) });
+  screen.append(seek.el);
 
   function applyStage() { document.documentElement.classList.toggle('stage', !!S.pref('stage', false)); }
   applyStage();
@@ -469,13 +472,16 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
 
   // ---------- playback
   function togglePlay() { player ? stopPlay() : startPlay(); }
-  function startPlay() {
+  function startPlay(fromBar) {
     const s = sc();
     if (!s.measures.some(x => x.t.length || x.b.length)) return toast('Add some notes first');
-    let from = 0;
-    if (sel) from = sel.m * M.capacity(s);
+    if (player) { player.stop(); player = null; }
+    const cap = M.capacity(s);
+    const from = (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
     wrap.classList.add('is-playing');
-    player = A.play(s, song.bpm || 80, from, (refs) => {
+    seek.setBars(s.measures.length); seek.set(Math.floor(from / cap)); seek.toggle(true);
+    player = A.play(s, song.bpm || 80, from, (refs, t) => {
+      seek.set(Math.min(s.measures.length - 1, Math.floor(t / cap)));
       wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
       let first = null;
       for (const r of refs) { const el = wrap.querySelector(`.ev[data-m="${r.m}"][data-s="${r.s}"][data-i="${r.i}"]`); if (el) { el.classList.add('playing'); first = first || el; } }
@@ -492,6 +498,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
     playing = false;
     wrap.classList.remove('is-playing');
     wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
+    seek.toggle(false);
     buildBar();
   }
 

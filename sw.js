@@ -1,7 +1,7 @@
 // Offline support: the app works on stage even without Wi-Fi.
-const CACHE = 'gift-of-tab-v18';
+const CACHE = 'gift-of-tab-v19';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/model.js', 'js/theory.js',
-  'js/importer.js', 'js/pdfimport.js', 'js/pdfrhythm.js', 'js/glyphs.js', 'js/versions.js', 'js/pickers.js', 'js/push.js', 'js/art.js', 'js/song.js', 'js/pages.js', 'js/score/glyphs.js', 'js/score/model.js', 'js/score/render.js', 'js/score/audio.js', 'js/score/screen.js', 'js/score/tech.js', 'js/score/techrender.js', 'js/score/techscreen.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
+  'js/importer.js', 'js/pdfimport.js', 'js/pdfrhythm.js', 'js/glyphs.js', 'js/versions.js', 'js/pickers.js', 'js/push.js', 'js/art.js', 'js/song.js', 'js/pages.js', 'js/score/glyphs.js', 'js/score/model.js', 'js/score/render.js', 'js/score/audio.js', 'js/score/screen.js', 'js/score/tech.js', 'js/score/techrender.js', 'js/score/techscreen.js', 'js/score/transport.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

@@ -263,11 +263,14 @@ export function renderTech(score, song, opts = {}) {
           if (!it.beamed && BEAMS[e.d]) { const fh = 2.3 * sp; for (const o of e.d === '32' ? [0, 0.7 * sp] : [0]) parts.push(glyph(e.d === '8' ? 'flag8' : 'flag16', cx - stemW / 2, yStemEnd - fh - o, fh, { flipY: true }).svg); }
           if (e.dot) parts.push(`<circle cx="${n(cx + 0.55 * sp)}" cy="${n(rTop + 1.3 * sp)}" r="${n(0.2 * sp)}"/>`);
         }
+        // the box that marks the beat being played (one rounded box over the whole column)
+        { const yTop = showNot ? S.nTop - 1.2 * sp : S.tTop - 1.1 * sp, yBot = S.rTop + 3.5 * sp;
+          parts.push(`<rect class="playbox" x="${n(cx - 1.25 * sp)}" y="${n(yTop)}" width="${n(2.5 * sp)}" height="${n(yBot - yTop)}" rx="${n(0.8 * sp)}"/>`); }
         out.push(`<g class="${cls}" data-m="${M.mi}" data-s="g" data-i="${it.i}">${parts.join('')}</g>`);
         if (e.chord) out.push(`<text class="chordsym" x="${n(cx - 0.4 * sp)}" y="${n(S.chY)}" font-size="${n(1.5 * sp)}">${esc(e.chord)}</text>`);
         if (e.section) {
           const w = e.section.length * 0.78 * sp + 1.4 * sp;
-          out.push(`<g class="secl"><rect x="${n(it.x - 0.6 * sp)}" y="${n(S.secY - 1.3 * sp)}" width="${n(w)}" height="${n(1.9 * sp)}" rx="${n(0.5 * sp)}"/><text x="${n(it.x + 0.1 * sp)}" y="${n(S.secY)}" font-size="${n(1.15 * sp)}">${esc(e.section)}</text></g>`);
+          out.push(`<g class="secl" data-m="${M.mi}" role="button"><rect x="${n(it.x - 0.6 * sp)}" y="${n(S.secY - 1.3 * sp)}" width="${n(w)}" height="${n(1.9 * sp)}" rx="${n(0.5 * sp)}"/><text x="${n(it.x + 0.1 * sp)}" y="${n(S.secY)}" font-size="${n(1.15 * sp)}">${esc(e.section)}</text></g>`);
         }
         if (e.lyric) out.push(`<text class="lyric" x="${n(cx)}" y="${n(S.lyY)}" font-size="${n(1.4 * sp)}" text-anchor="middle">${esc(e.lyric)}</text>`);
       });
