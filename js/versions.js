@@ -5,7 +5,7 @@
 import { TUNINGS, noteIndex, voicing, transposeChord, noteName } from './theory.js';
 import { uid } from './model.js';
 
-const FIELDS = ['instrument', 'tuning', 'tuningName', 'capo', 'transpose', 'blocks', 'bpm', 'key'];
+const FIELDS = ['instrument', 'tuning', 'tuningName', 'capo', 'transpose', 'blocks', 'bpm', 'key', 'score'];
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
 export const versionKey = (inst, mine) => inst + (mine ? ':mine' : '');

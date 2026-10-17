@@ -510,3 +510,55 @@ html.stage .tc .bend i { color: var(--amber); }
 .reminders .switch-row { align-items: center; flex-wrap: wrap; }
 .reminders .switch-row input[type=time] { min-width: 7.5em; min-height: 36px; margin-left: .4rem; border: 0; border-radius: 10px; padding: .35rem .5rem; background: #F6F1EA; box-shadow: inset 0 0 0 2px rgba(97,76,73,.10); font: inherit; font-weight: 800; }
 .ok-line { color: var(--teal-d); font-weight: 900; margin: 0; }
+
+/* ---------- piano sheet music */
+.piano-pick { grid-template-columns: 1fr 1fr; }
+.score-card .big-emoji { filter: saturate(1.2); }
+.score-wrap { margin: .4rem -4px 0; touch-action: manipulation; }
+.score-svg { display: block; fill: var(--ink); overflow: visible; }
+.score-svg .sl { stroke: var(--line); }
+.score-svg .sl.ledger { stroke: var(--bar); }
+.score-svg .bl, .score-svg .stem { stroke: var(--ink); }
+.score-svg .chordsym { fill: var(--chord); font-family: var(--font); font-weight: 900; }
+.score-svg .lyric { fill: var(--ink); font-family: var(--font); font-weight: 700; }
+.score-svg .mnum { fill: var(--muted); font-family: var(--font); font-weight: 800; }
+.score-svg .ev { transition: fill .08s; }
+.editing .score-svg .ev { cursor: pointer; }
+.score-svg .ev.sel { fill: var(--rust); }
+.score-svg .ev.sel .stem { stroke: var(--rust); }
+html.stage .score-svg .ev.sel { fill: var(--amber); }
+html.stage .score-svg .ev.sel .stem { stroke: var(--amber); }
+.score-svg .ev.playing { fill: var(--teal-d); }
+.score-svg .ev.playing .stem { stroke: var(--teal-d); }
+html.stage .score-svg .ev.playing, html.stage .score-svg .ev.playing .stem { fill: var(--mint); stroke: var(--mint); }
+.score-svg .caret { fill: var(--amber); animation: caretBlink 1.1s ease-in-out infinite; }
+@keyframes caretBlink { 50% { opacity: .35; } }
+.score-empty { text-align: center; color: var(--muted); font-weight: 800; padding: 1.5rem 0; display: flex; gap: .8rem; align-items: center; justify-content: center; flex-wrap: wrap; }
+.score-screen.kp-open .scroll-pad { height: calc(var(--padh, 300px) + 40px); }
+
+.score-pad { gap: 5px; }
+.score-pad .k.on { background: var(--amber); color: #3b2a12; }
+.score-pad .k.dur, .score-pad .k.staff { min-width: 44px; padding: 0 .3rem; display: inline-flex; align-items: center; justify-content: center; }
+.score-pad .k.acc { font-size: 22px; min-width: 42px; font-family: 'Times New Roman', serif; }
+.score-pad .k.dot { font-size: 26px; }
+.dur-ic { width: 26px; height: 26px; fill: currentColor; display: block; }
+.clef-ic { width: 22px; height: 30px; }
+.kp-gap { flex: none; width: 6px; }
+.kp-chord { flex: 0 1 36%; font-weight: 900; color: var(--rust); }
+.kp-lyric:disabled { opacity: .55; }
+
+.piano-kb { --wk: 38px; --bk: 24px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; border-radius: 10px; background: #2a201e; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+.piano-kb::-webkit-scrollbar { display: none; }
+@media (min-width: 900px) { .piano-kb { --wk: 42px; --bk: 26px; } }
+.pk-inner { position: relative; height: 112px; width: calc(var(--n) * var(--wk)); display: flex; }
+.pk { border: 0; padding: 0; margin: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.pk.white { flex: none; width: var(--wk); height: 100%; background: linear-gradient(#fffdf8, #f1e9df); border-right: 1px solid #c9bcb0; border-radius: 0 0 7px 7px; position: relative; }
+.pk.black { position: absolute; top: 0; width: var(--bk); height: 64%; background: linear-gradient(#4a3c39, #1d1615); border-radius: 0 0 5px 5px; z-index: 2; box-shadow: 0 2px 3px rgba(0,0,0,.4); }
+.pk.white.mid { background: linear-gradient(#fffdf8, #e8f1ec); }
+.pk.lit.white { background: linear-gradient(#ffe2c2, var(--amber)); }
+.pk.lit.black { background: linear-gradient(#e08a3a, var(--rust)); }
+.pk.white.down { background: #f2c78e; }
+.pk.black.down { background: var(--amber); }
+.pk-lab { position: absolute; bottom: 5px; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 900; color: #9a8a85; pointer-events: none; }
+@media (max-height: 700px) { .pk-inner { height: 92px; } }
+html.stage .stage-badge.on { color: #fff; }

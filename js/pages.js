@@ -4,12 +4,14 @@ import * as S from './store.js';
 import * as Sync from './sync.js';
 import { logo, countdownParts, emojiRain } from './art.js';
 import { newSong } from './model.js';
+import { newScore } from './score/model.js';
 import { importText, guessMeta, findBpm, findSongMeta } from './importer.js';
 import { tuningPicker, keyPicker, capoPicker } from './pickers.js';
 import { hasMine } from './versions.js';
 import * as Push from './push.js';
 
 const instEmoji = { guitar: '🎸', ukulele: '🪕', piano: '🎹' };
+const songEmoji = (s) => (s.kind === 'score' ? '🎼' : instEmoji[s.instrument] || '🎸');
 
 // ================= HOME =================
 export function homeScreen(root, nav) {
@@ -64,7 +66,7 @@ export function homeScreen(root, nav) {
         h('button', { class: 'card file-card new', type: 'button', onclick: () => newSongSheet(nav) }, icon('plus'), h('b', {}, 'New tab')),
         h('button', { class: 'card file-card imp', type: 'button', onclick: () => importSheet(nav) }, icon('import'), h('b', {}, 'Import tab')),
         recent.map(s => h('button', { class: 'card file-card', type: 'button', onclick: () => nav('#/song/' + s.id) },
-          h('span', { class: 'fc-inst' }, instEmoji[s.instrument] || '🎸'),
+          h('span', { class: 'fc-inst' }, songEmoji(s)),
           h('b', { class: 'fc-title' }, s.title), h('span', { class: 'fc-artist' }, s.artist || '—'), h('span', { class: 'fc-when' }, 'Edited ' + fmtDate(s.updated)))))));
 
     // --- library
@@ -114,7 +116,7 @@ export function homeScreen(root, nav) {
 function songRow(s, nav, rerender) {
   const more = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'More options', onclick: (e) => { e.stopPropagation(); songMenu(s, nav, rerender); } }, icon('dots'));
   return h('div', { class: 'song-row', role: 'button', tabindex: 0, onclick: () => nav('#/song/' + s.id), onkeydown: (e) => { if (e.key === 'Enter') nav('#/song/' + s.id); } },
-    h('span', { class: 'sr-inst' }, instEmoji[s.instrument] || '🎸'),
+    h('span', { class: 'sr-inst' }, songEmoji(s)),
     h('div', { class: 'sr-main' }, h('b', {}, s.title), h('span', {}, s.artist || '—')),
     hasMine(s) ? h('span', { class: 'tag mine' }, '★ ' + ((S.db.settings.stageName || '').trim() || 'Olden Gray')) : null,
     s.capo ? h('span', { class: 'tag' }, 'Capo ' + s.capo) : null,
@@ -195,11 +197,25 @@ export function concertSheet(after) {
 
 // ================= NEW / IMPORT =================
 export function newSongSheet(nav) {
-  const make = (inst) => { const s = newSong(inst); S.putSong(s); sh.close(); nav('#/song/' + s.id + '?edit=1'); };
-  const sh = sheet('New tab', h('div', { class: 'inst-pick' },
-    h('button', { type: 'button', class: 'card inst', onclick: () => make('guitar') }, h('span', { class: 'big-emoji' }, '🎸'), h('b', {}, 'Guitar'), h('span', {}, '6-string · standard EADGBE')),
-    h('button', { type: 'button', class: 'card inst', onclick: () => make('ukulele') }, h('span', { class: 'big-emoji' }, '🪕'), h('b', {}, 'Ukulele'), h('span', {}, 'GCEA')),
-    h('button', { type: 'button', class: 'card inst', onclick: () => make('piano') }, h('span', { class: 'big-emoji' }, '🎹'), h('b', {}, 'Piano'), h('span', {}, 'Chords & lyrics'))), { cls: 'small' });
+  const make = (inst, kind) => {
+    const s = newSong(inst);
+    if (kind === 'score') { s.kind = 'score'; s.blocks = []; s.score = newScore(); s.bpm = 80; s.key = 'C'; }
+    S.putSong(s); sh.close(); nav('#/song/' + s.id + '?edit=1');
+  };
+  const card = (emoji, title, sub, fn, cls = '') => h('button', { type: 'button', class: 'card inst ' + cls, onclick: fn }, h('span', { class: 'big-emoji' }, emoji), h('b', {}, title), h('span', {}, sub));
+  const body = h('div', {});
+  const instruments = () => { body.innerHTML = ''; body.append(h('div', { class: 'inst-pick' },
+    card('🎸', 'Guitar', '6-string · standard EADGBE', () => make('guitar')),
+    card('🪕', 'Ukulele', 'GCEA', () => make('ukulele')),
+    card('🎹', 'Piano', 'Sheet music or chords', pianoChoice))); };
+  // Piano gets a choice each time: full sheet music, or a simple chords & lyrics chart
+  const pianoChoice = () => { body.innerHTML = ''; body.append(
+    h('div', { class: 'inst-pick piano-pick' },
+      card('🎼', 'Sheet music', 'Notes on a grand staff — write, play back, perform', () => make('piano', 'score'), 'score-card'),
+      card('🎹', 'Chords & lyrics', 'Chord names over the words', () => make('piano'))),
+    h('div', { class: 'row' }, btn('Back', instruments, { cls: 'ghost', icon: 'back' }))); };
+  instruments();
+  const sh = sheet('New tab', body, { cls: 'small' });
 }
 
 export function importSheet(nav) {

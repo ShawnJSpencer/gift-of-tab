@@ -4,6 +4,7 @@ import * as S from './store.js';
 import * as Sync from './sync.js';
 import { logo } from './art.js';
 import { songScreen } from './song.js';
+import { scoreScreen } from './score/screen.js';
 import { homeScreen, playlistScreen, calendarScreen, settingsScreen, newSongSheet, importSheet, concertSheet } from './pages.js';
 
 const app = document.getElementById('app');
@@ -58,7 +59,10 @@ function route() {
   document.body.dataset.screen = parts[0] || 'home';
   window.setTopColor('#EEF5F1');
   setWake(parts[0] === 'song');
-  if (parts[0] === 'song') cleanup = songScreen(app, parts[1], { pl: q.get('pl'), edit: q.get('edit') === '1' }, nav);
+  if (parts[0] === 'song') {
+    const sg = S.getSong(parts[1]);
+    cleanup = (sg && sg.kind === 'score' ? scoreScreen : songScreen)(app, parts[1], { pl: q.get('pl'), edit: q.get('edit') === '1' }, nav);
+  }
   else if (parts[0] === 'playlist') cleanup = playlistScreen(app, parts[1], nav);
   else if (parts[0] === 'calendar') cleanup = calendarScreen(app, nav);
   else if (parts[0] === 'settings') cleanup = settingsScreen(app, nav);
