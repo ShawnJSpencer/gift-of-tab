@@ -262,7 +262,7 @@ export function importSheet(nav) {
     const opt = (on, emoji, label, sub, fn) => h('button', { type: 'button', class: 'card inst as-opt' + (on ? ' on' : ''), 'aria-pressed': String(on), onclick: fn }, h('span', { class: 'big-emoji' }, emoji), h('b', {}, label), h('span', {}, sub));
     asRow.append(h('div', { class: 'field-label' }, 'Import as'),
       h('div', { class: 'inst-pick piano-pick' },
-        opt(asTech, '🎼', 'Tech tab', `Rhythm read for ${t.bars} bar${t.bars === 1 ? '' : 's'} · ${t.time[0]}/${t.time[1]} · key of ${KEY_NAMES[t.keyFifths]}${keySel.value ? '' : ' (best guess)'}`, () => { asTech = true; renderAs(); }),
+        opt(asTech, '🎼', 'Tech tab', `Rhythm read for ${t.bars} bar${t.bars === 1 ? '' : 's'} · ${t.time[0]}/${t.time[1]} · key of ${KEY_NAMES[t.keyFifths]}${keySel.value ? '' : ' (best guess)'}${t.tempoChanges ? ` · ${t.tempoChanges} tempo change${t.tempoChanges === 1 ? '' : 's'}` : ''}`, () => { asTech = true; renderAs(); }),
         opt(!asTech, '🎸', 'Tab', 'Fret numbers, chords & lyrics — edit in the box below', () => { asTech = false; renderAs(); })),
       asTech ? h('p', { class: 'hint' }, 'The Tech tab is built straight from the PDF (the text box shows the plain version). ' + (t.guessed ? `${t.guessed} bar${t.guessed === 1 ? '' : 's'} didn't add up and were spaced out by eye — worth a listen. ` : '') + 'Check it with Play after importing.') : null);
   }
@@ -316,7 +316,8 @@ export function importSheet(nav) {
         song.kind = 'tech'; song.blocks = [];
         song.tech = { keyFifths: f, time: t.time, staves: ['g'], notation: true, measures: t.measures };
         song.key = keySel.value || KEY_NAMES[f];
-        if (!song.bpm) song.bpm = 90;
+        if (!song.bpm) song.bpm = t.bpm0 || 90;
+        if (t.tempoChanges) song.tech.bpm0 = t.bpm0 || song.bpm; // tempo changes are relative to the opening tempo
       }
       S.putSong(song); s.close(); toast('Imported! Tap Edit to customise.'); nav('#/song/' + song.id);
     }, { cls: 'primary', icon: 'import' }))));

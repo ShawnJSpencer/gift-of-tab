@@ -32,7 +32,7 @@ export function render(score, opts = {}) {
   const nKey = Math.abs(score.keyFifths);
   const hasLyrics = score.measures.some(m => m.t.some(e => e.lyric) || m.b.some(e => e.lyric));
   const hasChords = score.measures.some(m => m.t.some(e => e.chord) || m.b.some(e => e.chord));
-  const gap = (hasLyrics ? 9.5 : 7) * sp;           // treble bottom line → bass top line
+  const gap = (hasLyrics ? 10.5 : 7) * sp;           // treble bottom line → bass top line
   const sel = opts.sel, playing = opts.playing;
   const beatLen = (score.time[1] === 8 && score.time[0] % 3 === 0) ? 12 : (score.time[1] === 2 ? 16 : 8);
   const NH = sp * 1.0, NW = glyphW('black', NH);   // notehead size
@@ -107,7 +107,8 @@ export function render(score, opts = {}) {
       const d = dia(p) - BOTTOM[st];
       if (st === 't') hiT = Math.max(hiT, d + 7); else loB = Math.min(loB, d - 7);
     }
-    const top = Math.max(3.5 * sp, (hiT - 8) * sp / 2 + 1.5 * sp) + (hasChords ? 2.2 * sp : 0);
+    S.tempo = S.ms.some(M => M.m.bpm);
+    const top = Math.max(3.5 * sp, (hiT - 8) * sp / 2 + 1.5 * sp) + (hasChords ? 2.2 * sp : 0) + (S.tempo ? 2.2 * sp : 0);
     const bottom = Math.max(4 * sp, (-loB) * sp / 2 + 1.5 * sp);
     S.y = y; S.tTop = y + top; S.bTop = S.tTop + 4 * sp + gap; S.h = top + 8 * sp + gap + bottom;
     y += S.h + 1.5 * sp;
@@ -153,6 +154,8 @@ export function render(score, opts = {}) {
     if (si > 0) out.push(`<text class="mnum" x="${n(1.7 * sp)}" y="${n(S.tTop - 1.2 * sp)}" font-size="${n(1.15 * sp)}">${S.ms[0].mi + 1}</text>`);
 
     for (const M of S.ms) {
+      if (M.m.bpm) { const nx = M.x0 + 0.6 * sp, ty = S.y + 2.2 * sp, hh = 0.85 * sp;
+        out.push(`<g class="tempomark" data-m="${M.mi}"><rect x="${n(nx - 0.3 * sp)}" y="${n(ty - 2.2 * sp)}" width="${n(6.5 * sp)}" height="${n(2.8 * sp)}" style="fill:transparent"/>${glyph('black', nx, ty - hh * 0.8, hh).svg}<rect class="ink" x="${n(nx + glyphW('black', hh) - stemW)}" y="${n(ty - 2.0 * sp)}" width="${n(stemW)}" height="${n(1.7 * sp)}"/><text x="${n(nx + 1.5 * sp)}" y="${n(ty)}" font-size="${n(1.45 * sp)}">= ${Math.round(M.m.bpm * (opts.tempoScale || 1))}</text></g>`); }
       // bar line at the end
       const isLast = M.mi === score.measures.length - 1;
       if (isLast) {
@@ -182,8 +185,8 @@ export function render(score, opts = {}) {
 
         // chord symbols & lyrics (stored on either hand; drawn above / below the treble staff)
         items.forEach(it => {
-          if (it.e.chord) out.push(`<text class="chordsym" x="${n(it.x)}" y="${n(S.y + 1.9 * sp)}" font-size="${n(1.55 * sp)}">${esc(it.e.chord)}</text>`);
-          if (it.e.lyric) out.push(`<text class="lyric" x="${n(it.x + NW / 2)}" y="${n(S.tTop + 4 * sp + gap * 0.52)}" font-size="${n(1.45 * sp)}" text-anchor="middle">${esc(it.e.lyric)}</text>`);
+          if (it.e.chord) out.push(`<text class="chordsym" x="${n(it.x)}" y="${n(S.y + 1.9 * sp + (S.tempo ? 2.2 * sp : 0))}" font-size="${n(1.55 * sp)}">${esc(it.e.chord)}</text>`);
+          if (it.e.lyric) out.push(`<text class="lyric" x="${n(it.x + NW / 2)}" y="${n(S.tTop + 4 * sp + gap * 0.52)}" font-size="${n(1.8 * sp)}" text-anchor="middle">${esc(it.e.lyric)}</text>`);
         });
         // insertion caret (cursor after the last event)
         if (sel && sel.m === M.mi && sel.s === st && sel.i >= M.evs[st].length) {

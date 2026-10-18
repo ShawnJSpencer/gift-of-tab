@@ -180,7 +180,7 @@ function opticalRests(img, st, stems, yA, yB, x0, x1) {
 // ---------- whole song: time signature, bar-by-bar fixes, key
 const TIME_FOR = { 32: [4, 4], 24: [3, 4], 16: [2, 4], 40: [5, 4], 48: [6, 4], 12: [3, 8], 56: [7, 4], 36: [9, 8] };
 
-export function assembleTech(staffs, { tuning, strings, keyText } = {}) {
+export function assembleTech(staffs, { tuning, strings, keyText, bpm } = {}) {
   const allBars = [];
   for (const sf of staffs) for (const bar of sf.bars) allBars.push({ ...bar, sf });
   if (!allBars.length) return null;
@@ -284,8 +284,18 @@ export function assembleTech(staffs, { tuning, strings, keyText } = {}) {
     const mi = measures.findIndex(m => m.sf === sf && m.b > l.x + sf.sp);
     if (mi >= 0 && out[mi].g[0] && !out[mi].g[0].section) out[mi].g[0].section = l.name;
   }));
+  // tempo changes: the bar each "♩ = 73" sits over (the song's opening tempo isn't a change)
+  const marks = [];
+  staffs.forEach(sf => (sf.tempos || []).forEach(t => {
+    const mi = measures.findIndex(m => m.sf === sf && m.b > t.x + sf.sp * 0.5);
+    if (mi >= 0) marks.push({ mi, bpm: t.bpm });
+  }));
+  marks.sort((a, b) => a.mi - b.mi);
+  let cur = bpm || (marks[0] && marks[0].mi === 0 ? marks[0].bpm : null);
+  for (const t of marks) { if (t.bpm !== cur) { out[t.mi].bpm = t.bpm; cur = t.bpm; } }
+  const tempoChanges = marks.length ? out.filter(m => m.bpm).length : 0;
   const keyFifths = keyText != null ? keyText : guessKey(out, tuning, strings);
-  return { time, keyFifths, measures: out, bars: measures.length, fixed, guessed, notes: out.reduce((t, m) => t + m.g.filter(e => !e.rest).length, 0) };
+  return { time, keyFifths, measures: out, tempoChanges, bpm0: bpm || null, bars: measures.length, fixed, guessed, notes: out.reduce((t, m) => t + m.g.filter(e => !e.rest).length, 0) };
 }
 
 const VAL = [[48, 'w', true], [32, 'w'], [24, 'h', true], [16, 'h'], [12, 'q', true], [8, 'q'], [6, '8', true], [4, '8'], [3, '16', true], [2, '16'], [1, '32']];

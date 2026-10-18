@@ -218,3 +218,32 @@ export function beamGroups(items, beatLen, barLen, beamable) {
   close();
   return groups;
 }
+
+// ---------- tempo changes
+// A bar may start a new tempo: measure.bpm (in the song's own numbers; score.bpm0 is the song's
+// starting tempo they're relative to). Speeding the song up or down scales every change with it.
+export const tempoScale = (score, bpm) => (score.bpm0 ? bpm / score.bpm0 : 1);
+export function tempoAtBar(score, mi, bpm) {
+  const k = tempoScale(score, bpm);
+  for (let m = Math.min(mi, score.measures.length - 1); m >= 0; m--) if (score.measures[m] && score.measures[m].bpm) return score.measures[m].bpm * k;
+  return bpm;
+}
+// seconds from the top of the song to a time in 32nds, following every tempo change
+export function tempoMap(score, bpm) {
+  const starts = [], secs = [], rate = [];
+  let t = 0, s = 0, cur = bpm;
+  const k = tempoScale(score, bpm);
+  score.measures.forEach((m, mi) => {
+    if (m.bpm) cur = m.bpm * k;
+    const per32 = 60 / cur / 8;
+    starts.push(t); secs.push(s); rate.push(per32);
+    const c = capOf(score, mi); t += c; s += c * per32;
+  });
+  const lastRate = rate.length ? rate[rate.length - 1] : 60 / bpm / 8;
+  return (time) => {
+    let lo = 0, hi = starts.length - 1;
+    if (hi < 0) return time * lastRate;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= time) lo = mid; else hi = mid - 1; }
+    return secs[lo] + (time - starts[lo]) * rate[lo];
+  };
+}

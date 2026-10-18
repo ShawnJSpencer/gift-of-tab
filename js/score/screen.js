@@ -86,7 +86,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
     if (mode === 'edit') items.push(sep(), tb('Undo', '', doUndo, 'Undo'), tb('Redo', '', doRedo, 'Redo'),
       tb('Bar', 'plus', addBarAfter, 'Add an empty bar after this one'));
     items.push(sep(),
-      tb('', 'minus', () => tempo(-4), 'Slower'), h('span', { class: 'tb-label' }, `♩=${song.bpm || 80}`), tb('', 'plus', () => tempo(4), 'Faster'),
+      tb('', 'minus', () => tempo(-4), 'Slower'), h('span', { class: 'tb-label' }, `${song.bpm || 80} BPM`), tb('', 'plus', () => tempo(4), 'Faster'),
       sep(),
       tb('', 'minus', () => zoom(-1), 'Smaller music'), h('span', { class: 'tb-label' }, 'Aa'), tb('', 'plus', () => zoom(1), 'Bigger music'),
       sep(),
@@ -139,7 +139,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
     const width = Math.max(260, scroll.clientWidth - 28);
     const s = sc();
     if (mode === 'edit' && sel) ensureBar(sel.m);
-    layout = render(s, { width, sp: spPx(), sel: mode === 'edit' ? sel : null });
+    layout = render(s, { width, sp: spPx(), sel: mode === 'edit' ? sel : null, tempoScale: M.tempoScale(s, song.bpm || 80) });
     wrap.innerHTML = layout.svg;
     foot.innerHTML = '';
     const empty = !s.measures.some(m => m.t.length || m.b.length);
@@ -307,9 +307,39 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
     commit(); draw();
   }
 
+
+  // ---------- tempo change at a bar
+  function tempoSheet(barIdx) {
+    const s0 = sc(), base = song.bpm || 80;
+    const m = barIdx != null ? barIdx : sel ? sel.m : 0;
+    if (!s0.measures[m]) return;
+    const here = Math.round(M.tempoAtBar(s0, m, base));
+    const own = !!s0.measures[m].bpm;
+    const inp = h('input', { type: 'number', inputmode: 'numeric', min: 20, max: 300, value: here, class: 'bpm-big', 'aria-label': 'Beats per minute from this bar' });
+    const save = () => {
+      const v = Math.round(+inp.value); if (!(v >= 20 && v <= 300)) return toast('Pick a tempo between 20 and 300');
+      pushUndo();
+      if (m === 0) { song.bpm = v; } // bar 1 sets the song's own tempo
+      else {
+        if (!s0.bpm0) s0.bpm0 = base;
+        s0.measures[m].bpm = v / M.tempoScale(s0, base);
+      }
+      commit(); sh.close(); draw(); buildBar(); renderMeta(); toast(m === 0 ? `Song tempo: ${v} BPM` : `${v} BPM from bar ${m + 1}`);
+    };
+    const sh = sheet(`Tempo from bar ${m + 1}`, h('div', { class: 'form' },
+      h('p', { class: 'hint' }, m === 0 ? 'Bar 1 sets the tempo the song starts at.' : 'The music changes to this speed at the start of the bar and stays there until the next change. Speeding the whole song up or down (the tempo − / + buttons up top) scales every change with it.'),
+      field('Beats per minute', inp),
+      h('div', { class: 'row end' },
+        own ? btn('Remove change', () => { pushUndo(); delete s0.measures[m].bpm; commit(); sh.close(); draw(); toast('Tempo change removed'); }, { cls: 'ghost danger' }) : null,
+        btn('Save', save, { cls: 'primary', icon: 'check' }))), { cls: 'small' });
+    setTimeout(() => { inp.focus(); inp.select(); }, 250);
+  }
+
   // ---------- tap the staff
   wrap.addEventListener('click', (ev) => {
     if (!layout) return;
+    const tmEl = mode === 'edit' && ev.target.closest && ev.target.closest('.tempomark');
+    if (tmEl) { tempoSheet(+tmEl.dataset.m); return; }
     const r = wrap.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
     const g = ev.target.closest && ev.target.closest('.ev');
     if (mode !== 'edit') {
@@ -382,6 +412,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
       k('8va', () => octave(1), 'op', 'Up an octave'), k('8vb', () => octave(-1), 'op', 'Down an octave'),
       k('⌫', del, 'op', 'Delete note'),
       k('− Bar', deleteBar, 'op', 'Delete this bar'),
+      k('Tempo', () => tempoSheet(), 'op', 'Change the tempo from this bar'),
       k('Done', () => setMode('view'), 'done'));
     const lyr = h('input', { class: 'kp-lyric', value: (e && e.lyric) || '', placeholder: e ? 'Lyric (Enter → next note)' : 'Select a note to add a lyric', disabled: !e, enterkeyhint: 'next',
       onfocus: pushUndo, oninput: (ev) => setText('lyric', ev.target.value.trim()),

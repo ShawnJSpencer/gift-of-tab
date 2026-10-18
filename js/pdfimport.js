@@ -81,7 +81,7 @@ export async function pdfToTabText(file, onProgress, opts = {}) {
   try {
     const strings = techStaffs.length ? median(techStaffs.map(s => s.n)) : 6;
     const sameStrings = techStaffs.filter(s => s.n === strings);
-    if (sameStrings.length) tech = assembleTech(sameStrings, { tuning: tuningText && tuningText.length === strings ? tuningText : null, strings });
+    if (sameStrings.length) tech = assembleTech(sameStrings, { tuning: tuningText && tuningText.length === strings ? tuningText : null, strings, bpm: meta.bpm });
     if (tech) tech.strings = strings;
   } catch (e) { console.warn('tech', e); }
   return { text: parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), pages, scanned, staves, tech, tuning: tuningText && (tuningText.length === 6 || tuningText.length === 4) ? tuningText : null, ...meta };
@@ -242,10 +242,16 @@ function analysePage(items, img, expect, pageTuning = null) {
     // chord names may sit above a standard-notation staff that belongs to this tab staff
     const above = notation.filter(nst => nst.bot < st.top && st.top - nst.bot < sp * 12).sort((a, b) => b.bot - a.bot)[0];
     const chordTop = (above ? above.top : st.top) - sp * 4.5;
-    const notes = [], chords = [], lyrics = [], tuning = [], textLabels = [], dashes = [], techMarks = [];
+    const notes = [], chords = [], lyrics = [], tuning = [], textLabels = [], dashes = [], techMarks = [], tempos = [];
     // lyrics can sit a little way under the staff (below 'let ring' markings) — but stop before the next staff
     const nextTop = Math.min(...staffs.filter(o => o.top > st.bot).map(o => o.top), Infinity);
     const lyricLimit = Math.min(st.bot + sp * 7.5, nextTop - sp * 3);
+    // tempo marks above this staff ("♩ = 73") — read even if the song's first tempo already took one
+    for (const it of items) {
+      const tm = /^=\s*(\d{2,3})$/.exec(it.s.trim());
+      if (tm && it.cy < st.top && it.cy > chordTop - sp * 4 && it.x > x0 - sp * 3 && it.x < x1) { tempos.push({ x: it.x, bpm: +tm[1] }); it.used = true; }
+      if (it.s.includes('\uECA5') && it.cy < st.top && it.cy > chordTop - sp * 4) it.used = true;
+    }
     for (const it of items) {
       if (it.used || it.x + it.w < x0 - sp * 3 || it.x > x1 + sp) continue;
       if (inBand(st, it, sp * 0.6)) {
@@ -352,7 +358,7 @@ function analysePage(items, img, expect, pageTuning = null) {
     // rhythm under the staff → Tech tab bars
     try {
       const rh = readRhythm(img, st, { edges, cols, items, nextTop, x0, x1, drawn: usedOcrHere });
-      if (rh && rh.bars.length) techStaffs.push({ y: st.top, n: st.n, sp, drawn: rh.drawn, bars: rh.bars, labels: labels.map(l => ({ x: l.x, name: l.name })), tuning: tuning.slice() });
+      if (rh && rh.bars.length) techStaffs.push({ y: st.top, n: st.n, sp, drawn: rh.drawn, bars: rh.bars, labels: labels.map(l => ({ x: l.x, name: l.name })), tempos, tuning: tuning.slice() });
     } catch (e) { console.warn('rhythm', e); }
     prevBot = st.bot;
   }

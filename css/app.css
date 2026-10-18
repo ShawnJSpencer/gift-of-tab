@@ -615,3 +615,6 @@ html.stage .tech-svg .ev.playing .playbox { fill: rgba(197, 222, 211, .10); stro
 .tp-pp:active { transform: scale(.94); }
 .transport.paused .tp-pp { background: #fff; color: var(--brown); }
 .transport.paused .tp-label::after { content: ' · paused'; opacity: .75; }
+.score-svg .tempomark text { fill: var(--ink); font-family: var(--font); font-weight: 900; }
+.score-svg .tempomark .tm-note { font-family: 'Times New Roman', serif; font-size: 1.25em; }
+.editing .score-svg .tempomark { cursor: pointer; }

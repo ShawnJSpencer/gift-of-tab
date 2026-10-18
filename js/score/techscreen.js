@@ -88,7 +88,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
       tb('', 'next', () => goPl(1), 'Next song in playlist'));
     if (mode === 'edit') items.push(sep(), tb('Undo', '', doUndo, 'Undo'), tb('Redo', '', doRedo, 'Redo'), tb('Bar', 'plus', addBarAfter, 'Add an empty bar after this one'));
     items.push(sep(),
-      tb('', 'minus', () => tempo(-4), 'Slower'), h('span', { class: 'tb-label' }, `♩=${song.bpm || 90}`), tb('', 'plus', () => tempo(4), 'Faster'),
+      tb('', 'minus', () => tempo(-4), 'Slower'), h('span', { class: 'tb-label' }, `${song.bpm || 90} BPM`), tb('', 'plus', () => tempo(4), 'Faster'),
       sep(),
       tb('', 'minus', () => zoom(-1), 'Smaller'), h('span', { class: 'tb-label' }, 'Aa'), tb('', 'plus', () => zoom(1), 'Bigger'),
       sep(),
@@ -140,7 +140,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
   scroll.append(head, meta, wrap, foot, h('div', { class: 'scroll-pad' }));
   function draw() {
     if (mode === 'edit' && sel) ensureBar(sel.m);
-    layout = renderTech(sc(), song, { width: Math.max(260, scroll.clientWidth - 28), sp: spPx(), sel: mode === 'edit' ? sel : null });
+    layout = renderTech(sc(), song, { width: Math.max(260, scroll.clientWidth - 28), sp: spPx(), sel: mode === 'edit' ? sel : null, tempoScale: M.tempoScale(sc(), song.bpm || 90) });
     wrap.innerHTML = layout.svg;
     foot.innerHTML = '';
     const empty = !sc().measures.some(m => m.g.length);
@@ -276,10 +276,40 @@ export function techScreen(root, songId, ctx = {}, nav) {
     commit(); draw();
   }
 
+
+  // ---------- tempo change at a bar
+  function tempoSheet(barIdx) {
+    const s0 = sc(), base = song.bpm || 90;
+    const m = barIdx != null ? barIdx : sel ? sel.m : 0;
+    if (!s0.measures[m]) return;
+    const here = Math.round(M.tempoAtBar(s0, m, base));
+    const own = !!s0.measures[m].bpm;
+    const inp = h('input', { type: 'number', inputmode: 'numeric', min: 20, max: 300, value: here, class: 'bpm-big', 'aria-label': 'Beats per minute from this bar' });
+    const save = () => {
+      const v = Math.round(+inp.value); if (!(v >= 20 && v <= 300)) return toast('Pick a tempo between 20 and 300');
+      pushUndo();
+      if (m === 0) { song.bpm = v; } // bar 1 sets the song's own tempo
+      else {
+        if (!s0.bpm0) s0.bpm0 = base;
+        s0.measures[m].bpm = v / M.tempoScale(s0, base);
+      }
+      commit(); sh.close(); draw(); buildBar(); renderMeta(); toast(m === 0 ? `Song tempo: ${v} BPM` : `${v} BPM from bar ${m + 1}`);
+    };
+    const sh = sheet(`Tempo from bar ${m + 1}`, h('div', { class: 'form' },
+      h('p', { class: 'hint' }, m === 0 ? 'Bar 1 sets the tempo the song starts at.' : 'The music changes to this speed at the start of the bar and stays there until the next change. Speeding the whole song up or down (the tempo − / + buttons up top) scales every change with it.'),
+      field('Beats per minute', inp),
+      h('div', { class: 'row end' },
+        own ? btn('Remove change', () => { pushUndo(); delete s0.measures[m].bpm; commit(); sh.close(); draw(); toast('Tempo change removed'); }, { cls: 'ghost danger' }) : null,
+        btn('Save', save, { cls: 'primary', icon: 'check' }))), { cls: 'small' });
+    setTimeout(() => { inp.focus(); inp.select(); }, 250);
+  }
+
   // ---------- taps
   wrap.addEventListener('click', (ev) => {
     if (!layout) return;
     // tap a section name to play from there (or jump to it while playing)
+    const tmEl = mode === 'edit' && ev.target.closest && ev.target.closest('.tempomark');
+    if (tmEl) { tempoSheet(+tmEl.dataset.m); return; }
     const secEl = mode !== 'edit' && ev.target.closest && ev.target.closest('.secl');
     if (secEl) { startPlay(+secEl.dataset.m); return; }
     const r = wrap.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
@@ -331,7 +361,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
       h('span', { class: 'kp-gap' }),
       k('◀', () => moveSel(-1), 'nav', 'Previous beat'), k('▲', () => moveString(1), 'nav', 'String above'), k('▼', () => moveString(-1), 'nav', 'String below'), k('▶', () => moveSel(1), 'nav', 'Next beat'),
       h('span', { class: 'kp-gap' }),
-      k('+ Beat', insertBeat, 'op', 'Insert a beat here'), k('− Beat', deleteBeat, 'op', 'Delete this beat'), k('− Bar', deleteBar, 'op', 'Delete this bar'),
+      k('+ Beat', insertBeat, 'op', 'Insert a beat here'), k('− Beat', deleteBeat, 'op', 'Delete this beat'), k('− Bar', deleteBar, 'op', 'Delete this bar'), k('Tempo', () => tempoSheet(), 'op', 'Change the tempo from this bar'),
       k('Done', () => setMode('view'), 'done'));
     const row2 = h('div', { class: 'kp-row scroll' }, k('⌫', () => setCell(''), 'op', 'Clear this string'), ...frets, ...TECH.map(t => k(t, () => tech(t), 'tech', TECH_HELP[t])));
     const inp = (cls, kind, ph) => h('input', { class: 'kp-lyric ' + cls, value: (e && e[kind]) || '', placeholder: e ? ph : 'Select a beat first', disabled: !e, enterkeyhint: kind === 'lyric' ? 'next' : 'done',

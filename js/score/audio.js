@@ -1,6 +1,6 @@
 // Piano sheet music — playback with a small Web Audio piano-ish synth.
 // (On iPhone/iPad the ring/silent switch can mute web audio; turn it off to hear playback.)
-import { timeline } from './model.js';
+import { timeline, tempoMap } from './model.js';
 
 let ctx = null, master = null;
 function build() {
@@ -82,9 +82,8 @@ export function play(score, bpm, fromT, onStep, onEnd, opts = {}) {
 }
 function playNow(c, score, bpm, fromT, onStep, onEnd, opts) {
   const { events, total } = timeline(score, opts.pitches);
-  const beatUnit = 8; // tempo counts quarter notes
-  const secPer32 = 60 / (bpm || 80) / beatUnit;
-  const t0 = c.currentTime + 0.12 - fromT * secPer32;
+  const sec = tempoMap(score, bpm || 80); // follows tempo changes bar by bar
+  const t0 = c.currentTime + 0.12 - sec(fromT);
   const evs = events.filter(e => e.time >= fromT);
   const bus = c.createGain(); bus.connect(master);
   let k = 0, stopped = false;
@@ -95,15 +94,16 @@ function playNow(c, score, bpm, fromT, onStep, onEnd, opts) {
   function tick() {
     if (stopped) return;
     const horizon = c.currentTime + 0.15;
-    while (k < evs.length && t0 + evs[k].time * secPer32 < horizon) {
+    while (k < evs.length && t0 + sec(evs[k].time) < horizon) {
       const e = evs[k++];
-      if (!e.silent) e.midi.forEach((m, j) => tone(m, t0 + e.time * secPer32 + (opts.timbre === 'pluck' ? j * 0.012 : 0), e.dur * secPer32 * 0.95, e.ref.s === 'b' ? 0.42 : 0.5, bus, opts.timbre));
+      const at = sec(e.time), d = sec(e.time + e.dur) - at;
+      if (!e.silent) e.midi.forEach((m, j) => tone(m, t0 + at + (opts.timbre === 'pluck' ? j * 0.012 : 0), d * 0.95, e.ref.s === 'b' ? 0.42 : 0.5, bus, opts.timbre));
     }
-    while (oi < onsets.length && t0 + onsets[oi] * secPer32 <= c.currentTime) {
+    while (oi < onsets.length && t0 + sec(onsets[oi]) <= c.currentTime) {
       const t = onsets[oi++];
       onStep && onStep(evs.filter(e => e.time <= t && e.time + e.dur > t).map(e => e.ref), t);
     }
-    if (t0 + total * secPer32 < c.currentTime - 0.05 && k >= evs.length) { stop(); onEnd && onEnd(); }
+    if (t0 + sec(total) < c.currentTime - 0.05 && k >= evs.length) { stop(); onEnd && onEnd(); }
   }
   function stop() { stopped = true; clearInterval(timer); }
   return { stop: () => { stop(); bus.gain.setTargetAtTime(0, c.currentTime, 0.06); setTimeout(() => bus.disconnect(), 1500); } };

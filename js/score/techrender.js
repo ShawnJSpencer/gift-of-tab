@@ -64,7 +64,7 @@ export function renderTech(score, song, opts = {}) {
       // width needed by the widest cell
       let w = 0;
       (e.n || []).forEach(c => { if (!c) return; const P = cellParts(c); const chars = P.nums.join('').length + (P.nums.length > 1 ? 2.6 : 0); w = Math.max(w, chars * digitW); });
-      const lyW = e.lyric ? e.lyric.length * 0.78 * sp + 0.6 * sp : 0; // keep words from running together
+      const lyW = e.lyric ? e.lyric.length * 0.98 * sp + 0.7 * sp : 0; // keep words from running together
       extra[t] = Math.max(extra[t] || 0, w, lyW, showNot && accs.length ? 1.1 * sp : 0);
       evs.push({ e, i, t, ds: pitches.length ? pitches.map(dia) : null, accs });
       onsets.add(t); t += len(e);
@@ -101,12 +101,14 @@ export function renderTech(score, song, opts = {}) {
   let y = 0;
   for (const S of systems) {
     const hasSec = S.ms.some(M => M.m.g.some(e => e.section));
+    const hasTempo = S.ms.some(M => M.m.bpm);
     const hasCh = S.ms.some(M => M.m.g.some(e => e.chord));
     let hi = 8, lo = 0;
     for (const M of S.ms) for (const E of M.evs) if (E.ds) { hi = Math.max(hi, E.ds[E.ds.length - 1] - BOTTOM_T + 7); lo = Math.min(lo, E.ds[0] - BOTTOM_T - 7); }
     S.y = y;
     let yy = y + 0.6 * sp;
     if (hasSec) { S.secY = yy + 1.6 * sp; yy += 2.6 * sp; }
+    if (hasTempo) { S.tmY = yy + 1.6 * sp; yy += 2.4 * sp; }
     if (hasCh) { S.chY = yy + 1.5 * sp; yy += 2.3 * sp; }
     if (showNot) {
       yy += Math.max(2.5 * sp, (hi - 8) * sp / 2 + 1 * sp);
@@ -115,7 +117,7 @@ export function renderTech(score, song, opts = {}) {
     } else yy += 1.6 * sp;
     S.tTop = yy; yy += tabH;
     S.rTop = yy + 0.9 * sp; yy = S.rTop + 3.6 * sp;
-    if (hasLyrics) { S.lyY = yy + 1.3 * sp; yy += 2.2 * sp; }
+    if (hasLyrics) { S.lyY = yy + 1.7 * sp; yy += 2.8 * sp; }
     S.h = yy - y + 1.4 * sp;
     y += S.h;
   }
@@ -158,6 +160,11 @@ export function renderTech(score, song, opts = {}) {
     if (si > 0) out.push(`<text class="mnum" x="${n(x0)}" y="${n((showNot ? S.nTop : S.tTop) - 1.0 * sp)}" font-size="${n(1.15 * sp)}">${S.ms[0].mi + 1}</text>`);
 
     for (const M of S.ms) {
+      if (M.m.bpm) { // tempo change at this bar
+        const shown = Math.round(M.m.bpm * (opts.tempoScale || 1));
+        const nx = M.x0 + 0.6 * sp, hh = 0.85 * sp;
+        out.push(`<g class="tempomark" data-m="${M.mi}"><rect x="${n(nx - 0.3 * sp)}" y="${n(S.tmY - 2.2 * sp)}" width="${n(6.5 * sp)}" height="${n(2.8 * sp)}" style="fill:transparent"/>${glyph('black', nx, S.tmY - hh * 0.8, hh).svg}<rect class="ink" x="${n(nx + glyphW('black', hh) - stemW)}" y="${n(S.tmY - 2.0 * sp)}" width="${n(stemW)}" height="${n(1.7 * sp)}"/><text x="${n(nx + 1.5 * sp)}" y="${n(S.tmY)}" font-size="${n(1.45 * sp)}">= ${shown}</text></g>`);
+      }
       if (M.showTs) { // time signature change at this bar
         const dg = (num, xx0, yTop, hgt) => { const s = String(num), dw = glyphW('t0', hgt); let xx = xx0 + (2.2 * sp - dw * s.length) / 2; for (const c of s) { out.push(`<g class="ink">${glyph('t' + c, xx, yTop, hgt).svg}</g>`); xx += dw; } };
         const th = Math.min(tabH / 2, 2.6 * sp), xx0 = M.x0 + 0.6 * sp;
@@ -282,7 +289,7 @@ export function renderTech(score, song, opts = {}) {
           const w = e.section.length * 0.78 * sp + 1.4 * sp;
           out.push(`<g class="secl" data-m="${M.mi}" role="button"><rect x="${n(it.x - 0.6 * sp)}" y="${n(S.secY - 1.3 * sp)}" width="${n(w)}" height="${n(1.9 * sp)}" rx="${n(0.5 * sp)}"/><text x="${n(it.x + 0.1 * sp)}" y="${n(S.secY)}" font-size="${n(1.15 * sp)}">${esc(e.section)}</text></g>`);
         }
-        if (e.lyric) out.push(`<text class="lyric" x="${n(cx)}" y="${n(S.lyY)}" font-size="${n(1.4 * sp)}" text-anchor="middle">${esc(e.lyric)}</text>`);
+        if (e.lyric) out.push(`<text class="lyric" x="${n(cx)}" y="${n(S.lyY)}" font-size="${n(1.8 * sp)}" text-anchor="middle">${esc(e.lyric)}</text>`);
       });
       // string cursor (selected beat or the insertion point)
       if (sel && sel.m === M.mi) {
