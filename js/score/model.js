@@ -8,6 +8,12 @@ export const DUR_ORDER = ['w', 'h', 'q', '8', '16'];
 export const DUR_NAME = { w: 'Whole', h: 'Half', q: 'Quarter', '8': 'Eighth', '16': 'Sixteenth', '32': 'Thirty-second' };
 export const len = (e) => DUR[e.d] * (e.dot ? 1.5 : 1);
 export const capacity = (score) => score.time[0] * (32 / score.time[1]);
+// A bar can have its own length (e.g. a 3/4 bar in a 4/4 song): measure.cap, in 32nds.
+export const capOf = (score, mi) => (score.measures[mi] && score.measures[mi].cap) || capacity(score);
+export const barStart = (score, mi) => { let t = 0; for (let k = 0; k < mi && k < score.measures.length; k++) t += capOf(score, k); return t; };
+export function barAtTime(score, t) { let s = 0; for (let k = 0; k < score.measures.length; k++) { const c = capOf(score, k); if (t < s + c) return k; s += c; } return Math.max(0, score.measures.length - 1); }
+// time signature shown for a bar length
+export const timeFor = (cap, base) => (cap === base[0] * (32 / base[1]) ? base : cap % 8 === 0 ? [cap / 8, 4] : cap % 4 === 0 ? [cap / 4, 8] : [cap / 2, 16]);
 
 const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const STEP_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -53,10 +59,10 @@ export const blankBar = (score) => Object.fromEntries(staves(score).map(s => [s,
 
 // Insert an event for one hand at position (m, i). Overflow flows into the next bar (new bars as needed).
 export function insertEvent(score, staff, m, i, ev) {
-  const cap = capacity(score);
   let mi = m, idx = i;
   while (true) {
     if (!score.measures[mi]) score.measures.push(blankBar(score));
+    const cap = capOf(score, mi);
     const evs = score.measures[mi][staff];
     if (idx > evs.length) idx = evs.length;
     if (filled(evs) + len(ev) <= cap) { evs.splice(idx, 0, ev); return { m: mi, i: idx }; }
@@ -75,9 +81,9 @@ export function insertEvent(score, staff, m, i, ev) {
 }
 // Put events at the start of bar m, pushing later events onward as needed.
 function reflow(score, staff, m, evs) {
-  const cap = capacity(score);
   while (evs.length) {
     if (!score.measures[m]) score.measures.push(blankBar(score));
+    const cap = capOf(score, m);
     const cur = score.measures[m][staff];
     cur.unshift(...evs); evs = [];
     while (filled(cur) > cap && cur.length > 1) evs.unshift(cur.pop());
@@ -123,16 +129,18 @@ export function transposeScore(score, semis) {
 
 // Flatten into time-ordered playable notes: [{ time (in 32nds), dur, midi[] , ref }]
 export function timeline(score, pitches = (e) => (e.notes || []).map(midiOf)) {
-  const cap = capacity(score), out = [];
+  const out = [];
+  let start = 0;
   score.measures.forEach((m, mi) => {
     for (const st of staves(score)) {
-      let t = mi * cap;
+      let t = start;
       m[st].forEach((e, i) => {
         const mids = e.rest ? [] : pitches(e);
         if (mids.length) out.push({ time: t, dur: len(e), midi: mids, tie: !!e.tie, ref: { m: mi, s: st, i } });
         t += len(e);
       });
     }
+    start += capOf(score, mi);
   });
   // merge tied notes into one longer sound
   out.sort((a, b) => a.time - b.time);
@@ -141,7 +149,7 @@ export function timeline(score, pitches = (e) => (e.notes || []).map(midiOf)) {
     const b = out.find(x => x !== a && x.time === a.time + a.dur && x.ref.s === a.ref.s && x.midi.join() === a.midi.join());
     if (b) { a.dur += b.dur; b.silent = true; }
   }
-  return { events: out, total: score.measures.length * cap };
+  return { events: out, total: start };
 }
 
 // Rests that add up to a length (largest first).
@@ -162,7 +170,7 @@ export function rebar(score, newTime) {
   const streams = Object.fromEntries(sts.map(s => [s, []]));
   score.measures.forEach((m, mi) => {
     for (const st of sts) {
-      const gap = oldCap - filled(m[st]);
+      const gap = (m.cap || oldCap) - filled(m[st]);
       streams[st].push(...m[st]);
       if (gap > 0 && mi < lastIdx) streams[st].push(...restsFor(gap));
     }
@@ -185,24 +193,27 @@ export function rebar(score, newTime) {
 // Start time (32nds) of an event position.
 export function timeAt(score, m, s, i) {
   const evs = (score.measures[m] && score.measures[m][s]) || [];
-  return m * capacity(score) + filled(evs.slice(0, i));
+  return barStart(score, m) + filled(evs.slice(0, i));
 }
 
 // Beam groups: notes beam within a beat, and in 4/4 or 2/4 a group may run on through the
 // half bar when a note crosses the beat (8th + dotted 8th + 16ths, as Guitar Pro draws it).
 export function beamGroups(items, beatLen, barLen, beamable) {
-  const half = barLen % 16 === 0 && beatLen === 8 ? 16 : beatLen;
+  const half = beatLen === 8 && barLen >= 16 ? 16 : beatLen;
   const groups = [];
   let g = null;
   const close = () => { if (g && g.its.length > 1) groups.push(g); g = null; };
   for (const it of items) {
     const t = it.t, end = t + len(it.e);
-    const halfEnd = (Math.floor(t / half) + 1) * half;
-    if (!beamable(it) || end > halfEnd) { close(); continue; }
+    // a group may span up to two beats from the beat it starts on (so beat 2 can beam into beat 3)
+    const own = half === beatLen ? (Math.floor(t / half) + 1) * half : Math.min(barLen, Math.floor(t / beatLen) * beatLen + half);
+    if (!beamable(it)) { close(); continue; }
+    if (g && g.last === t && t < g.end && end <= g.halfEnd) { g.its.push(it); g.last = end; g.end = Math.max(g.end, Math.min(Math.ceil(end / beatLen) * beatLen, g.halfEnd)); continue; }
+    const halfEnd = own;
+    if (end > halfEnd) { close(); continue; }
     const reach = Math.min(Math.ceil(end / beatLen) * beatLen, halfEnd);
-    if (g && g.last === t && t < g.end && end <= g.halfEnd) { g.its.push(it); g.last = end; g.end = Math.max(g.end, reach); continue; }
     close();
-    g = { its: [it], last: end, end: Math.max(reach, (Math.floor(t / beatLen) + 1) * beatLen), halfEnd };
+    g = { its: [it], last: end, start: t, end: Math.max(reach, (Math.floor(t / beatLen) + 1) * beatLen), halfEnd };
   }
   close();
   return groups;

@@ -1,6 +1,6 @@
 // Piano sheet music — engraver. Lays a score out as grand-staff systems and draws it as one SVG string.
 import { G } from './glyphs.js';
-import { len, capacity, parsePitch, keyAlters, BEAMS, beamGroups } from './model.js';
+import { len, capacity, capOf, parsePitch, keyAlters, BEAMS, beamGroups } from './model.js';
 
 const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BOTTOM = { t: 4 * 7 + 2, b: 2 * 7 + 4 }; // diatonic number of each staff's bottom line (E4, G2)
@@ -41,6 +41,7 @@ export function render(score, opts = {}) {
   // ---- 1. per-measure natural layout (columns by onset time across both staves)
   const accState = () => ({ ...ka });
   const meas = score.measures.map((m, mi) => {
+    const cap = capOf(score, mi);
     const onsets = new Set([0, cap]);
     const evs = { t: [], b: [] };
     let maxAcc = {};
@@ -69,7 +70,7 @@ export function render(score, opts = {}) {
       if (k < times.length - 1) x += spacing(times[k + 1] - t) * sp;
     }
     const w = Math.max(x, 7 * sp);
-    return { mi, m, evs, col, w };
+    return { mi, m, evs, col, w, cap };
   });
   void accState;
 
@@ -176,7 +177,7 @@ export function render(score, opts = {}) {
           const ds = (!e.rest && e.notes && e.notes.length) ? e.notes.map(dia).sort((a, b) => a - b) : null;
           return { ...E, x, ds };
         });
-        drawVoice(out, items, { top, bottomDia: BOTTOM[st], sp, beatLen, barLen: cap, NW, NH, stemW, lineW, mi: M.mi, st, hit, isSel,
+        drawVoice(out, items, { top, bottomDia: BOTTOM[st], sp, beatLen, barLen: M.cap, NW, NH, stemW, lineW, mi: M.mi, st, hit, isSel,
           isPlaying: (i) => !!(playing && playing.has(`${M.mi}${st}${i}`)), nextFirst: () => nextBarFirst(M, st), tieEndX: Math.min(M.x1 + 1.5 * sp, width - 2) });
 
         // chord symbols & lyrics (stored on either hand; drawn above / below the treble staff)

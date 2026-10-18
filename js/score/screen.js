@@ -154,7 +154,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
   // ---------- selection helpers
   const evsAt = (m, s) => (sc().measures[m] ? sc().measures[m][s] : []);
   const selEvent = () => (sel && evsAt(sel.m, sel.s)[sel.i]) || null;
-  function full(m, s) { return M.filled(evsAt(m, s)) >= M.capacity(sc()); }
+  function full(m, s) { return M.filled(evsAt(m, s)) >= M.capOf(sc(), m); }
   function after(pos, s) {
     let { m, i } = pos; i++;
     if (i >= evsAt(m, s).length && full(m, s)) { m++; i = 0; ensureBar(m); }
@@ -482,22 +482,21 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
   }
   function resumePlay() { if (pausedAt == null) return startPlay(); const t = pausedAt; startPlay(null, t); }
   function seekTo(bar) {
-    const s0 = sc(), cap0 = M.capacity(s0);
-    if (pausedAt != null && !player) { pausedAt = lastT = bar * cap0; seek.set(bar); return; } // stay paused at the new spot
+    const s0 = sc();
+    if (pausedAt != null && !player) { pausedAt = lastT = M.barStart(s0, bar); seek.set(bar); return; } // stay paused at the new spot
     startPlay(bar);
   }
   function startPlay(fromBar, fromT) {
     const s = sc();
     if (!s.measures.some(x => x.t.length || x.b.length)) return toast('Add some notes first');
     if (player) { player.stop(); player = null; }
-    const cap = M.capacity(s);
-    const from = fromT != null ? fromT : (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
+    const from = fromT != null ? fromT : M.barStart(s, fromBar != null ? fromBar : sel ? sel.m : 0);
     pausedAt = null; lastT = from; seek.setPaused(false);
     wrap.classList.add('is-playing');
-    seek.setBars(s.measures.length); seek.set(Math.floor(from / cap)); seek.toggle(true);
+    seek.setBars(s.measures.length); seek.set(M.barAtTime(s, from)); seek.toggle(true);
     player = A.play(s, song.bpm || 80, from, (refs, t) => {
       lastT = t;
-      seek.set(Math.min(s.measures.length - 1, Math.floor(t / cap)));
+      seek.set(M.barAtTime(s, t));
       wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
       let first = null;
       for (const r of refs) { const el = wrap.querySelector(`.ev[data-m="${r.m}"][data-s="${r.s}"][data-i="${r.i}"]`); if (el) { el.classList.add('playing'); first = first || el; } }

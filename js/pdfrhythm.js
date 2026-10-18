@@ -98,7 +98,8 @@ export function readRhythm(img, st, { edges, cols, items, nextTop, x0, x1, drawn
   if (drawn && !rests.length) rests.push(...opticalRests(img, st, real, yA, Math.round(stemBot + sp * 0.2), x0, x1));
 
   // tuplet marks ("3" printed by a beam group)
-  const tupX = items.filter(i => /^[356]$/.test(i.s.trim()) && i.cy > st.bot && i.cy < yB + sp).map(i => i.x + i.w / 2);
+  // (well clear of the staff — a fret 3 on the bottom string is not a triplet)
+  const tupX = items.filter(i => /^[356]$/.test(i.s.trim()) && i.cy > st.bot + sp * 1.2 && i.cy < yB + sp).map(i => i.x + i.w / 2);
   // 5. durations from the marks
   const medLen = median(real.filter(s => s.beams || s.flags).map(s => s.len)) || median(real.map(s => s.len));
   for (const s of real) {
@@ -220,6 +221,12 @@ export function assembleTech(staffs, { tuning, strings, keyText } = {}) {
       if (!done) break;
     }
     let d = cap - sum();
+    // a bar that's cleanly a beat (or more) shorter or longer — e.g. a 3/4 bar in a 4/4 song — keeps
+    // its own length instead of being padded with rests or squeezed
+    const unit = time[1] === 8 ? 4 : 8, total = sum();
+    if (d !== 0 && !unk.length && !bar.tup && total >= unit && total % unit === 0 && total <= cap * 2 && !evs.every(e => e.rest)) {
+      return { evs, sf: bar.sf, a: bar.a, b: bar.b, cap: total, ownLen: true };
+    }
     if (d > 0) { // missing dot, or a half note drawn like a quarter
       const cand = evs.filter(e => !e.rest && e.L / 2 === d && !e.dot);
       const pick = cand.find((e, i) => { const nx = evs[evs.indexOf(e) + 1]; return nx && nx.L <= e.L / 2; }) || cand[0];
@@ -269,7 +276,7 @@ export function assembleTech(staffs, { tuning, strings, keyText } = {}) {
         if (ev.n) prev = ev;
       });
     }
-    out.push({ g });
+    out.push(m.ownLen ? { g, cap: m.cap } : { g });
   }
   // section names
   staffs.forEach(sf => (sf.labels || []).forEach(l => {

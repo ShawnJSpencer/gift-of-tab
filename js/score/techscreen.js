@@ -155,7 +155,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
   // ---------- selection
   const evs = (m) => (sc().measures[m] ? sc().measures[m].g : []);
   const selEvent = () => (sel && evs(sel.m)[sel.i]) || null;
-  const full = (m) => M.filled(evs(m)) >= M.capacity(sc());
+  const full = (m) => M.filled(evs(m)) >= M.capOf(sc(), m);
   function moveSel(d) {
     if (!sel) return;
     let { m, i } = sel;
@@ -391,22 +391,21 @@ export function techScreen(root, songId, ctx = {}, nav) {
   }
   function resumePlay() { if (pausedAt == null) return startPlay(); const t = pausedAt; startPlay(null, t); }
   function seekTo(bar) {
-    const s0 = sc(), cap0 = M.capacity(s0);
-    if (pausedAt != null && !player) { pausedAt = lastT = bar * cap0; seek.set(bar); return; } // stay paused at the new spot
+    const s0 = sc();
+    if (pausedAt != null && !player) { pausedAt = lastT = M.barStart(s0, bar); seek.set(bar); return; } // stay paused at the new spot
     startPlay(bar);
   }
   function startPlay(fromBar, fromT) {
     if (!sc().measures.some(x => x.g.some(e => !e.rest))) return toast('Add some notes first');
     if (!M.timeline(sc(), (e) => pitchesOf(e, song)).events.length) return toast('None of these notes could be turned into sound — check the tuning in Tab settings.', 4500);
     if (player) { player.stop(); player = null; }
-    const cap = M.capacity(sc());
-    const from = fromT != null ? fromT : (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
+    const from = fromT != null ? fromT : M.barStart(sc(), fromBar != null ? fromBar : sel ? sel.m : 0);
     pausedAt = null; lastT = from; seek.setPaused(false);
     wrap.classList.add('is-playing');
-    seek.setBars(sc().measures.length); seek.set(Math.floor(from / cap)); seek.toggle(true);
+    seek.setBars(sc().measures.length); seek.set(M.barAtTime(sc(), from)); seek.toggle(true);
     player = A.play(sc(), song.bpm || 90, from, (refs, t) => {
       lastT = t;
-      seek.set(Math.min(sc().measures.length - 1, Math.floor(t / cap)));
+      seek.set(M.barAtTime(sc(), t));
       wrap.querySelectorAll('.ev.playing').forEach(x => x.classList.remove('playing'));
       let first = null;
       for (const r of refs) wrap.querySelectorAll(`.ev[data-m="${r.m}"][data-i="${r.i}"]`).forEach(el => { el.classList.add('playing'); first = first || el; });

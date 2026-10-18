@@ -2,7 +2,7 @@
 // and rhythm (stems, beams, flags, rests) under the tab — like Guitar Pro printouts.
 import { G } from './glyphs.js';
 import { glyph, glyphW, drawVoice } from './render.js';
-import { len, capacity, parsePitch, keyAlters, spell, BEAMS, beamGroups } from './model.js';
+import { len, capacity, capOf, timeFor, parsePitch, keyAlters, spell, BEAMS, beamGroups } from './model.js';
 import { pitchesOf } from './tech.js';
 
 const BOTTOM_T = 4 * 7 + 2; // E4 on the treble staff's bottom line
@@ -45,6 +45,10 @@ export function renderTech(score, song, opts = {}) {
 
   // ---- 1. natural layout per bar
   const meas = score.measures.map((m, mi) => {
+    const cap = capOf(score, mi);
+    // a bar whose length differs from the one before shows its own time signature (3/4, then 4/4 again)
+    const ts = timeFor(cap, score.time), prevTs = mi === 0 ? score.time : timeFor(capOf(score, mi - 1), score.time);
+    const showTs = mi > 0 && (ts[0] !== prevTs[0] || ts[1] !== prevTs[1]);
     const evs = []; const cur = {};
     let t = 0;
     const onsets = new Set([0, cap]);
@@ -66,14 +70,14 @@ export function renderTech(score, song, opts = {}) {
       onsets.add(t); t += len(e);
     });
     const times = [...onsets].filter(x => x <= cap).sort((a, b) => a - b);
-    const col = {}; let x = 1.4 * sp;
+    const col = {}; let x = (showTs ? 4.0 : 1.4) * sp;
     for (let k = 0; k < times.length; k++) {
       const tt = times[k];
       x += Math.max(0, (extra[tt] || 0) - 1.2 * sp) / 2;
       col[tt] = x;
       if (k < times.length - 1) x += Math.max(spacing(times[k + 1] - tt) * sp, (extra[tt] || 0) + 1.0 * sp);
     }
-    return { mi, m, evs, col, w: Math.max(x + 0.6 * sp, 7 * sp) };
+    return { mi, m, evs, col, cap, ts, showTs, w: Math.max(x + 0.6 * sp, 7 * sp) };
   });
 
   // ---- 2. systems
@@ -154,6 +158,12 @@ export function renderTech(score, song, opts = {}) {
     if (si > 0) out.push(`<text class="mnum" x="${n(x0)}" y="${n((showNot ? S.nTop : S.tTop) - 1.0 * sp)}" font-size="${n(1.15 * sp)}">${S.ms[0].mi + 1}</text>`);
 
     for (const M of S.ms) {
+      if (M.showTs) { // time signature change at this bar
+        const dg = (num, xx0, yTop, hgt) => { const s = String(num), dw = glyphW('t0', hgt); let xx = xx0 + (2.2 * sp - dw * s.length) / 2; for (const c of s) { out.push(`<g class="ink">${glyph('t' + c, xx, yTop, hgt).svg}</g>`); xx += dw; } };
+        const th = Math.min(tabH / 2, 2.6 * sp), xx0 = M.x0 + 0.6 * sp;
+        dg(M.ts[0], xx0, S.tTop + tabH / 2 - th, th); dg(M.ts[1], xx0, S.tTop + tabH / 2, th);
+        if (showNot) { dg(M.ts[0], xx0, S.nTop, 2 * sp); dg(M.ts[1], xx0, S.nTop + 2 * sp, 2 * sp); }
+      }
       const isLast = M.mi === score.measures.length - 1;
       const bar = (yA, yB) => {
         if (isLast) {
@@ -178,13 +188,13 @@ export function renderTech(score, song, opts = {}) {
       // notation staff (reuses the piano engraver)
       if (showNot && items.length) {
         const vItems = items.map(it => ({ ...it, ds: it.ds, e: it.ds || it.e.rest ? it.e : { ...it.e, rest: true } }));
-        drawVoice(out, vItems, { top: S.nTop, bottomDia: BOTTOM_T, sp, beatLen, barLen: cap, NW, NH, stemW, lineW, mi: M.mi, st: 'g', hit: { xs: [] }, isSel, isPlaying,
+        drawVoice(out, vItems, { top: S.nTop, bottomDia: BOTTOM_T, sp, beatLen, barLen: M.cap, NW, NH, stemW, lineW, mi: M.mi, st: 'g', hit: { xs: [] }, isSel, isPlaying,
           nextFirst: () => { const nm = meas[M.mi + 1]; return nm && nm.X && S.ms.includes(nm) && nm.evs.length ? { x: nm.X(nm.evs[0].t) } : null; },
           tieEndX: Math.min(M.x1 + 1.5 * sp, width - 2), hitH: 7 });
       }
 
       // rhythm groups (beams per beat)
-      const groups = beamGroups(items, beatLen, cap, (it) => !it.e.rest && !!BEAMS[it.e.d]);
+      const groups = beamGroups(items, beatLen, M.cap, (it) => !it.e.rest && !!BEAMS[it.e.d]);
       groups.forEach(gr => gr.its.forEach(it => { it.beamed = gr; }));
       const yStemEnd = S.rTop + 3.0 * sp, bt = 0.45 * sp;
       for (const gr of groups) {
