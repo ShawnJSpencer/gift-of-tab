@@ -505,7 +505,7 @@ export function scoreScreen(root, songId, ctx = {}, nav) {
         const rr = first.getBoundingClientRect(), limit = (mode === 'edit' ? keypad.getBoundingClientRect().top : window.innerHeight) * 0.72;
         if (rr.top > limit || rr.top < 40) scroll.scrollBy({ top: rr.top - 120, behavior: 'smooth' });
       }
-    }, () => { stopPlay(); });
+    }, () => { stopPlay(); }, { onStuck: () => { stopPlay(); toast('🔇 The sound didn’t start — tap Play again. If it stays quiet, check the volume and that the iPad isn’t on silent.', 5000); } });
     playing = true; buildBar();
   }
   let playing = false;

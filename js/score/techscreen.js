@@ -397,6 +397,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
   }
   function startPlay(fromBar, fromT) {
     if (!sc().measures.some(x => x.g.some(e => !e.rest))) return toast('Add some notes first');
+    if (!M.timeline(sc(), (e) => pitchesOf(e, song)).events.length) return toast('None of these notes could be turned into sound — check the tuning in Tab settings.', 4500);
     if (player) { player.stop(); player = null; }
     const cap = M.capacity(sc());
     const from = fromT != null ? fromT : (fromBar != null ? fromBar : sel ? sel.m : 0) * cap;
@@ -413,7 +414,7 @@ export function techScreen(root, songId, ctx = {}, nav) {
         const rr = first.getBoundingClientRect(), limit = (mode === 'edit' ? keypad.getBoundingClientRect().top : window.innerHeight) * 0.72;
         if (rr.top > limit || rr.top < 40) scroll.scrollBy({ top: rr.top - 140, behavior: 'smooth' });
       }
-    }, () => stopPlay(), { pitches: (e) => pitchesOf(e, song), timbre: 'pluck' });
+    }, () => stopPlay(), { pitches: (e) => pitchesOf(e, song), timbre: 'pluck', onStuck: () => { stopPlay(); toast('🔇 The sound didn’t start — tap Play again. If it stays quiet, check the volume and that the iPad isn’t on silent.', 5000); } });
     playing = true; buildBar();
   }
   function stopPlay() {

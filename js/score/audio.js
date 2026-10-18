@@ -3,17 +3,25 @@
 import { timeline } from './model.js';
 
 let ctx = null, master = null;
+function build() {
+  const C = window.AudioContext || window.webkitAudioContext;
+  ctx = new C();
+  master = ctx.createDynamicsCompressor();
+  master.threshold.value = -18; master.ratio.value = 4;
+  const g = ctx.createGain(); g.gain.value = 0.9;
+  master.connect(g); g.connect(ctx.destination);
+}
+// iPhone/iPad can leave the sound engine 'suspended' or 'interrupted' (a notification, the screen
+// dimming, headphones reconnecting…). Always nudge it awake; rebuild it if it's been closed.
 function ac() {
-  if (!ctx) {
-    const C = window.AudioContext || window.webkitAudioContext;
-    ctx = new C();
-    master = ctx.createDynamicsCompressor();
-    master.threshold.value = -18; master.ratio.value = 4;
-    const g = ctx.createGain(); g.gain.value = 0.9;
-    master.connect(g); g.connect(ctx.destination);
-  }
-  if (ctx.state === 'suspended') ctx.resume();
+  if (!ctx || ctx.state === 'closed') build();
+  if (ctx.state !== 'running') { try { const r = ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch {} }
   return ctx;
+}
+function rebuild() { try { ctx && ctx.close(); } catch {} ctx = null; master = null; return ac(); }
+// a silent blip inside the tap keeps iOS treating the engine as allowed to play
+function unlock(c) {
+  try { const b = c.createBuffer(1, 1, c.sampleRate), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch {}
 }
 
 const freq = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -50,8 +58,29 @@ export function tone(midi, when, dur, vel = 0.5, dest = null, timbre = 'piano') 
 export function preview(midis, timbre) { const c = ac(); midis.forEach((m, k) => tone(m, c.currentTime + 0.01 + (timbre === 'pluck' ? k * 0.018 : 0), 0.6, 0.45, null, timbre)); }
 
 // Play a score from a time (in 32nds). onStep(refs, t32) fires as each new onset sounds; onEnd() at the end.
+// Play with a watchdog: if the engine's clock doesn't move (stuck after an interruption),
+// rebuild it and start again, so Play never just sits there silently.
 export function play(score, bpm, fromT, onStep, onEnd, opts = {}) {
-  const c = ac();
+  let inner = null, stopped = false, lastStep = fromT, retried = false;
+  const step = (refs, t) => { lastStep = t; onStep && onStep(refs, t); };
+  const start = (from, c) => { inner = playNow(c, score, bpm, from, step, () => { if (!stopped) onEnd && onEnd(); }, opts); };
+  const c0 = ac(); unlock(c0);
+  const startClock = c0.currentTime;
+  start(fromT, c0);
+  const check = () => {
+    if (stopped) return;
+    if (ctx === c0 && c0.state === 'running' && c0.currentTime > startClock + 0.05) return; // all good
+    if (retried) { opts.onStuck && opts.onStuck(); return; }
+    retried = true;
+    inner.stop();
+    const c = rebuild(); unlock(c);
+    start(lastStep, c);
+    setTimeout(() => { if (!stopped && (c.state !== 'running' || c.currentTime < 0.05)) opts.onStuck && opts.onStuck(); }, 900);
+  };
+  setTimeout(check, 700);
+  return { stop: () => { stopped = true; inner && inner.stop(); } };
+}
+function playNow(c, score, bpm, fromT, onStep, onEnd, opts) {
   const { events, total } = timeline(score, opts.pitches);
   const beatUnit = 8; // tempo counts quarter notes
   const secPer32 = 60 / (bpm || 80) / beatUnit;
