@@ -6,6 +6,8 @@ import { logo } from './art.js';
 import { songScreen } from './song.js';
 import { scoreScreen } from './score/screen.js';
 import { techScreen } from './score/techscreen.js';
+import { tunerScreen } from './tuner.js';
+import { learnScreen } from './learn.js';
 import { homeScreen, playlistScreen, calendarScreen, settingsScreen, newSongSheet, importSheet, concertSheet } from './pages.js';
 
 const app = document.getElementById('app');
@@ -27,6 +29,8 @@ window.openDrawer = () => {
     item('home', 'Home', () => nav('#/')),
     item('plus', 'New tab', () => newSongSheet(nav)),
     item('import', 'Import tab', () => importSheet(nav)),
+    item('tuner', 'Tuner', () => nav('#/tuner')),
+    item('learn', 'Learn & quizzes', () => nav('#/learn')),
     item('cal', 'Practice calendar', () => nav('#/calendar')),
     item('star', 'Concert date', () => concertSheet(() => route())),
     item('cloud', 'Sync & settings', () => nav('#/settings')),
@@ -65,6 +69,8 @@ function route() {
     cleanup = (sg && sg.kind === 'score' ? scoreScreen : sg && sg.kind === 'tech' ? techScreen : songScreen)(app, parts[1], { pl: q.get('pl'), edit: q.get('edit') === '1' }, nav);
   }
   else if (parts[0] === 'playlist') cleanup = playlistScreen(app, parts[1], nav);
+  else if (parts[0] === 'tuner') cleanup = tunerScreen(app, nav);
+  else if (parts[0] === 'learn') cleanup = learnScreen(app, nav, parts[1]);
   else if (parts[0] === 'calendar') cleanup = calendarScreen(app, nav);
   else if (parts[0] === 'settings') cleanup = settingsScreen(app, nav);
   else cleanup = homeScreen(app, nav);

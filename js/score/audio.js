@@ -108,3 +108,41 @@ function playNow(c, score, bpm, fromT, onStep, onEnd, opts) {
   function stop() { stopped = true; clearInterval(timer); }
   return { stop: () => { stop(); bus.gain.setTargetAtTime(0, c.currentTime, 0.06); setTimeout(() => bus.disconnect(), 1500); } };
 }
+
+// ---------- quiz sounds
+// A short happy two-note chime for a right answer.
+export function chime() {
+  const c = ac(); unlock(c); const t = c.currentTime + 0.02;
+  [[76, 0], [83, 0.09], [88, 0.18]].forEach(([m, dt]) => tone(m, t + dt, 0.35, 0.33));
+}
+// A brief, gnarly, distorted rock chord (a crunchy cluster) for a wrong answer.
+export function buzz() {
+  const c = ac(); unlock(c); const t = c.currentTime + 0.02;
+  const shaper = c.createWaveShaper();
+  const curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 9); }
+  shaper.curve = curve; shaper.oversample = '4x';
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+  g.gain.setTargetAtTime(0.0001, t + 0.38, 0.06);
+  shaper.connect(lp); lp.connect(g); g.connect(master);
+  // E2, F2 and A#2: a minor second plus a tritone — as wrong as it gets
+  [40, 41, 46, 52].forEach((m, k) => {
+    const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq(m) * (1 + (k - 1.5) * 0.004);
+    const og = c.createGain(); og.gain.value = 0.35; o.connect(og); og.connect(shaper);
+    o.start(t + k * 0.012); o.stop(t + 0.75);
+  });
+}
+// A single plucked string note (for fretboard taps) or a strummed chord.
+export function pluck(midis, strum = 0.035) {
+  const c = ac(); unlock(c); const t = c.currentTime + 0.02;
+  [].concat(midis).forEach((m, k) => tone(m, t + k * strum, 1.4, 0.5, null, 'pluck'));
+}
+// A steady reference pitch for the tuner.
+export function reference(midi, a4 = 440, secs = 1.8) {
+  const c = ac(); unlock(c); const t = c.currentTime + 0.02;
+  const f = a4 * Math.pow(2, (midi - 69) / 12);
+  const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.04); g.gain.setTargetAtTime(0.0001, t + secs, 0.12);
+  g.connect(master);
+  [[1, 'triangle', 1], [2, 'sine', 0.25]].forEach(([mul, type, amp]) => { const o = c.createOscillator(), og = c.createGain(); o.type = type; o.frequency.value = f * mul; og.gain.value = amp; o.connect(og); og.connect(g); o.start(t); o.stop(t + secs + 0.6); });
+}

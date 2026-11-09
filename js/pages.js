@@ -56,7 +56,7 @@ export function homeScreen(root, nav) {
       h('div', { class: 'hero-kicker' }, '⏱️ Today'),
       h('div', { class: 'today-row' },
         h('div', { class: 'big-ring', style: { '--p': pct } }, h('span', {}, Math.floor(today / 60))),
-        h('div', {}, h('div', { class: 'today-min' }, `${Math.floor(today / 60)} of ${S.db.settings.goal || 30} min`), h('div', { class: 'cd-small' }, pct >= 1 ? 'Goal smashed 🎉' : 'Practice time counts while a tab is open'))));
+        h('div', {}, h('div', { class: 'today-min' }, `${Math.floor(today / 60)} of ${S.db.settings.goal || 30} min`), h('div', { class: 'cd-small' }, pct >= 1 ? 'Goal smashed 🎉' : 'Counts while a tab or quiz is open'))));
     page.append(h('div', { class: 'hero-grid' }, cdCard, streakCard, todayCard));
 
     // --- file menu: new / import / recent
@@ -66,6 +66,8 @@ export function homeScreen(root, nav) {
       h('div', { class: 'recent-strip' },
         h('button', { class: 'card file-card new', type: 'button', onclick: () => newSongSheet(nav) }, icon('plus'), h('b', {}, 'New tab')),
         h('button', { class: 'card file-card imp', type: 'button', onclick: () => importSheet(nav) }, icon('import'), h('b', {}, 'Import tab')),
+        h('button', { class: 'card file-card tune', type: 'button', onclick: () => nav('#/tuner') }, icon('tuner'), h('b', {}, 'Tuner')),
+        h('button', { class: 'card file-card learn', type: 'button', onclick: () => nav('#/learn') }, icon('learn'), h('b', {}, 'Learn')),
         recent.map(s => h('button', { class: 'card file-card', type: 'button', onclick: () => nav('#/song/' + s.id) },
           h('span', { class: 'fc-inst' }, songEmoji(s)),
           h('b', { class: 'fc-title' }, s.title), h('span', { class: 'fc-artist' }, s.artist || '—'),
