@@ -701,7 +701,7 @@ html.stage .tech-svg .ev.playing .playbox { fill: rgba(197, 222, 211, .10); stro
 .flip-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 22px; background: #fff; box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--brown); }
 .flip-face.back { transform: rotateY(180deg); background: var(--amber); color: #fff; }
 .flip-face .diagram svg { width: 170px; height: auto; }
-.flip-name { font-family: var(--display); font-size: 4rem; }
+.flip-name { font-family: var(--font); font-weight: 900; font-size: 4.2rem; letter-spacing: -.01em; } /* Bungee is all caps — it turned "Am" into "AM" */
 .flip-q { font-weight: 900; opacity: .75; }
 /* circle of fifths */
 .wheel-wrap { display: flex; justify-content: center; }
