@@ -3,8 +3,8 @@ import { G } from './glyphs.js';
 import { len, capacity, capOf, parsePitch, keyAlters, BEAMS, beamGroups } from './model.js';
 
 const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-const BOTTOM = { t: 4 * 7 + 2, b: 2 * 7 + 4 }; // diatonic number of each staff's bottom line (E4, G2)
-const KEY_POS = {
+export const BOTTOM = { t: 4 * 7 + 2, b: 2 * 7 + 4 }; // diatonic number of each staff's bottom line (E4, G2)
+export const KEY_POS = {
   t: { s: ['F5', 'C5', 'G5', 'D5', 'A4', 'E5', 'B4'], f: ['B4', 'E5', 'A4', 'D5', 'G4', 'C5', 'F4'] },
   b: { s: ['F3', 'C3', 'G3', 'D3', 'A2', 'E3', 'B2'], f: ['B2', 'E3', 'A2', 'D3', 'G2', 'C3', 'F2'] },
 };

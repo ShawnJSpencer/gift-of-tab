@@ -1,5 +1,6 @@
-// Learn: practice quizzes — chord flashcards, circle of fifths, notes by ear, and find-every-note.
-// Time spent here counts toward the daily practice goal.
+// Learn: practice quizzes — chord flashcards, circle of fifths, notes by ear, find-every-note and
+// music fundamentals (reading the staff, key signatures). Each has Beginner / Intermediate / Hard.
+// Time spent inside a quiz counts toward the daily practice goal.
 import { h, icon, btn, toast } from './ui.js';
 import * as S from './store.js';
 import { TUNINGS, COMMON_CHORDS, voicing, parseChord } from './theory.js';
@@ -8,12 +9,14 @@ import { fretboard, burstAt, noteOf, pretty } from './fretboard.js';
 import { practiceTimer } from './practice.js';
 import * as A from './score/audio.js';
 import { openPitches } from './versions.js';
+import { glyph, BOTTOM, KEY_POS } from './score/render.js';
 
 const QUIZZES = [
   { id: 'chords', emoji: '🃏', title: 'Chord flashcards', sub: 'See the chord chart, name the chord' },
   { id: 'circle', emoji: '⭕', title: 'Circle of fifths', sub: 'Place the keys, then answer key questions' },
   { id: 'ear', emoji: '👂', title: 'Notes by ear', sub: 'Hear a note, find it on the fretboard — add frets as you improve' },
   { id: 'find', emoji: '🔎', title: 'Find every note', sub: 'One note name — find all of them on the neck' },
+  { id: 'read', emoji: '🎼', title: 'Music fundamentals', sub: 'Read notes on the staff and name key signatures' },
 ];
 
 const rnd = (a) => a[Math.floor(Math.random() * a.length)];
@@ -27,8 +30,9 @@ export function learnScreen(root, nav, which) {
   const page = h('div', { class: 'page learn-page' });
   root.append(page);
   window.setTopColor('#EEF5F1');
-  const timer = practiceTimer();
   const quiz = QUIZZES.find(q => q.id === which);
+  // practice time only counts inside a quiz, not while browsing the Learn menu
+  const timer = quiz ? practiceTimer() : { el: null, stop() {} };
   page.append(h('header', { class: 'page-head learn-head' },
     h('button', { type: 'button', class: 'icon-btn', 'aria-label': quiz ? 'Back to Learn' : 'Menu', onclick: () => (quiz ? nav('#/learn') : window.openDrawer()) }, icon(quiz ? 'back' : 'menu')),
     h('h1', { class: 'page-title' }, quiz ? `${quiz.emoji} ${quiz.title}` : '🎓 Learn'),
@@ -38,15 +42,27 @@ export function learnScreen(root, nav, which) {
   page.append(body);
   let cleanup = () => {};
   if (!quiz) hub(body, nav);
-  else cleanup = ({ chords: chordQuiz, circle: circleQuiz, ear: earQuiz, find: findQuiz })[quiz.id](body) || cleanup;
+  else cleanup = ({ chords: chordQuiz, circle: circleQuiz, ear: earQuiz, find: findQuiz, read: readQuiz })[quiz.id](body) || cleanup;
   return () => { timer.stop(); cleanup(); };
 }
 
 function hub(body, nav) {
-  body.append(h('p', { class: 'hint' }, 'Practice away from a song — every minute here counts toward today’s goal.'),
+  body.append(h('p', { class: 'hint' }, 'Practice away from a song — time spent in a quiz counts toward today’s goal.'),
     h('div', { class: 'learn-grid' }, QUIZZES.map(q => h('button', { type: 'button', class: 'card learn-card', onclick: () => nav('#/learn/' + q.id) },
       h('span', { class: 'lc-emoji' }, q.emoji), h('b', {}, q.title), h('span', {}, q.sub),
+      h('span', { class: 'lc-level' }, LEVEL_NAME[level(q.id)]),
       S.pref('learn.best.' + q.id) ? h('span', { class: 'lc-best' }, '🏆 ' + S.pref('learn.best.' + q.id)) : null))));
+}
+
+// ---------- shared: difficulty
+const LEVELS = ['beg', 'int', 'hard'];
+const LEVEL_NAME = { beg: '🌱 Beginner', int: '🌿 Intermediate', hard: '🔥 Hard' };
+const level = (id) => S.pref('learn.level.' + id, 'beg');
+function levelBar(id, onChange) {
+  const bar = h('div', { class: 'segmented level-bar', role: 'radiogroup', 'aria-label': 'Difficulty' });
+  const paint = () => { bar.innerHTML = ''; LEVELS.forEach(k => bar.append(h('button', { type: 'button', class: 'seg-btn' + (level(id) === k ? ' on' : ''), 'aria-pressed': String(level(id) === k), onclick: () => { S.setPref('learn.level.' + id, k); paint(); onChange(k); } }, LEVEL_NAME[k]))); };
+  paint();
+  return h('div', { class: 'learn-controls' }, bar);
 }
 
 // ---------- shared: instrument & tuning picker for fretboard quizzes
@@ -75,25 +91,29 @@ function currentSetup() {
 function saveBest(id, text, better) { const cur = S.pref('learn.best.' + id); if (!cur || better(cur)) S.setPref('learn.best.' + id, text); }
 
 // ---------- 1. chord flashcards
-const BASIC = ['C', 'D', 'E', 'G', 'A', 'Am', 'Dm', 'Em', 'D7', 'E7', 'A7', 'G7', 'C7', 'B7', 'F', 'Fmaj7', 'Cmaj7', 'Asus2', 'Asus4', 'Dsus2', 'Dsus4', 'Cadd9', 'Em7', 'Am7'];
+const CHORD_LEVELS = {
+  beg: ['C', 'D', 'E', 'F', 'G', 'A'],
+  int: ['Am', 'Dm', 'Em', 'Bm', 'Cm', 'Gm', 'Fm', 'F#m', 'C#m', 'G#m', 'Bb', 'Eb', 'Ab', 'B', 'F#', 'Db'],
+  hard: ['C7', 'D7', 'E7', 'G7', 'A7', 'B7', 'Cmaj7', 'Fmaj7', 'Gmaj7', 'Dmaj7', 'Am7', 'Em7', 'Dm7', 'Bm7', 'Dsus2', 'Dsus4', 'Asus2', 'Asus4', 'Esus4', 'Gsus4', 'Csus2', 'Cadd9', 'Gadd9', 'Bdim', 'Edim', 'Caug', 'D/F#', 'G/B', 'C/E'],
+};
 function chordQuiz(body) {
-  let set = S.pref('learn.chordset', 'basic'), style = S.pref('learn.chordstyle', 'flip');
+  let style = S.pref('learn.chordstyle', 'flip');
   let card = null, flipped = false, answered = false, right_ = 0, total = 0, streak = 0;
   const controls = h('div', { class: 'learn-controls' });
   const stage = h('div', { class: 'chord-stage' });
   const score = h('div', { class: 'learn-score' });
   const bar = instrumentBar(() => next());
-  body.append(bar, controls, score, stage);
+  body.append(levelBar('chords', () => { card = null; next(); }), bar, controls, score, stage);
+  // each level adds to the one before, but new cards favour the level's own chords
   const pool = () => {
-    const s = currentSetup();
-    const names = set === 'basic' ? BASIC : [...new Set([...BASIC, ...COMMON_CHORDS.flat()])];
+    const s = currentSetup(), L = level('chords');
+    const names = L === 'beg' ? CHORD_LEVELS.beg : L === 'int' ? [...CHORD_LEVELS.beg, ...CHORD_LEVELS.int, ...CHORD_LEVELS.int] : [...CHORD_LEVELS.beg, ...CHORD_LEVELS.int, ...CHORD_LEVELS.hard, ...CHORD_LEVELS.hard];
     return names.filter(n => parseChord(n) && voicing(n, s.tuning));
   };
   function paintControls() {
     controls.innerHTML = '';
     const seg = (key, val, cur, label, fn) => h('button', { type: 'button', class: 'seg-btn' + (cur === val ? ' on' : ''), onclick: fn }, label);
     controls.append(
-      h('div', { class: 'segmented' }, seg('set', 'basic', set, 'Open chords', () => { set = 'basic'; S.setPref('learn.chordset', set); paintControls(); next(); }), seg('set', 'all', set, 'All chords', () => { set = 'all'; S.setPref('learn.chordset', set); paintControls(); next(); })),
       h('div', { class: 'segmented' }, seg('st', 'flip', style, '🔄 Flip card', () => { style = 'flip'; S.setPref('learn.chordstyle', style); paintControls(); next(); }), seg('st', 'choice', style, '🔘 Pick the name', () => { style = 'choice'; S.setPref('learn.chordstyle', style); paintControls(); next(); })));
   }
   function paintScore() { score.textContent = total ? `✅ ${right_} of ${total}   ·   🔥 streak ${streak}` : 'Name the chord from its chart'; }
@@ -106,7 +126,7 @@ function chordQuiz(body) {
   function grade(ok, elm) {
     if (answered) return;
     answered = true; total++;
-    if (ok) { right_++; streak++; right(elm, streak % 5 === 0); saveBest('chords', `${streak} in a row`, (cur) => parseInt(cur, 10) < streak); }
+    if (ok) { right_++; streak++; right(elm, streak % 5 === 0); saveBest('chords', `${streak} in a row (${LEVEL_NAME[level('chords')].slice(3)})`, (cur) => parseInt(cur, 10) < streak); }
     else { streak = 0; wrong(elm); }
     paintScore();
     if (style === 'flip') setTimeout(next, 900);
@@ -137,7 +157,7 @@ function chordQuiz(body) {
     paintActions();
     stage.append(flipBox);
     if (style === 'choice') {
-      const others = shuffle(list.filter(n => n !== name)).slice(0, 3);
+      const others = shuffle([...new Set(list)].filter(n => n !== name)).slice(0, 3);
       const choices = h('div', { class: 'choice-grid' }, shuffle([name, ...others]).map(n => h('button', { type: 'button', class: 'choice', onclick: (e) => {
         if (answered) return;
         const ok = n === name;
@@ -162,13 +182,13 @@ const SIG = ['no sharps or flats', '1 sharp', '2 sharps', '3 sharps', '4 sharps'
 const ROOT_PC = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
 function circleQuiz(body) {
   let mode = S.pref('learn.circlemode', 'place');
-  let shown = new Set([0]), shownMin = new Set(), target = null, ring = 'maj', right_ = 0, total = 0, misses = 0, streak = 0, answered = false;
+  let shown = new Set(), shownMin = new Set(), target = null, ring = 'maj', right_ = 0, total = 0, misses = 0, streak = 0, answered = false;
   const controls = h('div', { class: 'learn-controls' });
   const prompt = h('div', { class: 'learn-prompt' });
   const score = h('div', { class: 'learn-score' });
   const wheelWrap = h('div', { class: 'wheel-wrap' });
   const below = h('div', {});
-  body.append(controls, prompt, score, wheelWrap, below);
+  body.append(levelBar('circle', () => restart()), controls, prompt, score, wheelWrap, below);
   function paintControls() {
     controls.innerHTML = '';
     const seg = (val, label) => h('button', { type: 'button', class: 'seg-btn' + (mode === val ? ' on' : ''), onclick: () => { mode = val; S.setPref('learn.circlemode', mode); restart(); paintControls(); } }, label);
@@ -198,11 +218,11 @@ function circleQuiz(body) {
   // ---- place the keys
   function placeNext() {
     const majLeft = [...Array(12).keys()].filter(i => !shown.has(i));
-    const minLeft = [...Array(12).keys()].filter(i => !shownMin.has(i));
+    const minLeft = level('circle') === 'hard' ? [...Array(12).keys()].filter(i => !shownMin.has(i)) : []; // minors only on Hard
     if (!majLeft.length && !minLeft.length) {
       emojiRain(); A.chime();
       prompt.innerHTML = ''; prompt.append(h('b', {}, `🏆 Circle complete! ${misses} miss${misses === 1 ? '' : 'es'}.`));
-      if (S.pref('learn.circlebest', 99) > misses) { S.setPref('learn.circlebest', misses); S.setPref('learn.best.circle', `whole circle with ${misses} miss${misses === 1 ? '' : 'es'}`); }
+      if (level('circle') === 'hard' && S.pref('learn.circlebest', 99) > misses) { S.setPref('learn.circlebest', misses); S.setPref('learn.best.circle', `whole circle with ${misses} miss${misses === 1 ? '' : 'es'}`); }
       below.innerHTML = ''; below.append(h('div', { class: 'learn-actions' }, btn('Start again', restart, { cls: 'primary', icon: 'next' })));
       wheel(true); return;
     }
@@ -221,7 +241,9 @@ function circleQuiz(body) {
   // ---- key questions
   function ask() {
     answered = false;
-    const i = Math.floor(Math.random() * 12);
+    const L = level('circle');
+    // Beginner sticks to the sharp side (plus F); Intermediate and Hard use every key
+    const i = L === 'beg' ? rnd([0, 1, 2, 3, 4, 5, 11]) : Math.floor(Math.random() * 12);
     const kinds = [
       () => [`What’s a fifth above ${MAJ[i]}?`, MAJ[(i + 1) % 12], MAJ],
       () => [`What’s a fourth above ${MAJ[i]}?`, MAJ[(i + 11) % 12], MAJ],
@@ -231,7 +253,8 @@ function circleQuiz(body) {
       () => [`Which major key has ${SIG[i]}?`, MAJ[i], MAJ],
       () => [`In the key of ${MAJ[i]}, the IV and V chords are…`, `${MAJ[(i + 11) % 12]} and ${MAJ[(i + 1) % 12]}`, MAJ.map((_, k) => `${MAJ[(k + 11) % 12]} and ${MAJ[(k + 1) % 12]}`)],
     ];
-    const [q, ans, from] = rnd(kinds)();
+    const use = L === 'beg' ? [0, 4] : L === 'int' ? [0, 1, 2, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
+    const [q, ans, from] = kinds[rnd(use)]();
     const opts = shuffle([ans, ...shuffle(from.filter(x => x !== ans)).slice(0, 3)]);
     prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, q));
     const peek = S.pref('learn.circlepeek', false);
@@ -250,7 +273,9 @@ function circleQuiz(body) {
     below.append(grid, h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: peek, onchange: (e) => { S.setPref('learn.circlepeek', e.target.checked); wheel(e.target.checked); } }), h('span', {}, 'Show the circle while I answer')));
   }
   function paintScore() { score.textContent = total ? `✅ ${right_} of ${total}   ·   🔥 streak ${streak}` : ''; }
-  function restart() { shown = new Set([0]); shownMin = new Set(); right_ = total = misses = streak = 0; below.innerHTML = ''; paintScore(); mode === 'place' ? placeNext() : ask(); }
+  function restart() {
+    // Beginner starts with every other key already placed
+    shown = new Set(level('circle') === 'beg' ? [0, 2, 4, 6, 8, 10] : [0]); shownMin = new Set(); right_ = total = misses = streak = 0; below.innerHTML = ''; paintScore(); mode === 'place' ? placeNext() : ask(); }
   paintControls(); restart();
 }
 
@@ -264,7 +289,8 @@ function earQuiz(body) {
   const holder = h('div', { class: 'fb-holder' });
   const actions = h('div', { class: 'learn-actions' });
   const fretCtl = h('div', { class: 'learn-controls' });
-  body.append(bar, fretCtl, prompt, score, holder, actions);
+  const EAR = { beg: [0, true], int: [3, false], hard: [7, false] }; // frets, show names
+  body.append(levelBar('ear', (k) => { [frets, names] = EAR[k]; S.setPref('learn.earfrets', frets); S.setPref('learn.earnames', names); rebuild(); }), bar, fretCtl, prompt, score, holder, actions);
   let fb = null;
   function rebuild() {
     const s = currentSetup();
@@ -333,20 +359,19 @@ function earQuiz(body) {
 const NATURALS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const ALLNOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 function findQuiz(body) {
-  let sharps = S.pref('learn.findsharps', false), toFret = S.pref('learn.findto', 12);
+  const FIND = { beg: [false, 5], int: [false, 12], hard: [true, 15] }; // sharps & flats, last fret
+  let [sharps, toFret] = FIND[level('find')];
   let pc = null, found = new Set(), need = [], misses = 0, t0 = 0, done = false, clock = null;
   const bar = instrumentBar(() => rebuild());
   const ctl = h('div', { class: 'learn-controls' });
   const head = h('div', { class: 'find-head' });
   const holder = h('div', { class: 'fb-holder' });
   const actions = h('div', { class: 'learn-actions' });
-  body.append(bar, ctl, head, holder, actions);
+  body.append(levelBar('find', (k) => { [sharps, toFret] = FIND[k]; rebuild(); }), bar, ctl, head, holder, actions);
   let fb = null;
   function paintCtl() {
     ctl.innerHTML = '';
-    ctl.append(
-      h('div', { class: 'segmented' }, [[12, 'Frets 0–12'], [15, 'Frets 0–15']].map(([v, l]) => h('button', { type: 'button', class: 'seg-btn' + (toFret === v ? ' on' : ''), onclick: () => { toFret = v; S.setPref('learn.findto', v); rebuild(); } }, l))),
-      h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: sharps, onchange: (e) => { sharps = e.target.checked; S.setPref('learn.findsharps', sharps); newNote(); } }), h('span', {}, 'Include sharps')));
+    ctl.append(h('div', { class: 'hint' }, `${sharps ? 'All 12 notes, sharps and flats too' : 'Natural notes (no sharps or flats)'} · open to fret ${toFret}`));
   }
   function rebuild() { fb = fretboard({ ...currentSetup(), from: 0, to: toFret, onTap: tap }); holder.innerHTML = ''; holder.append(fb.el); paintCtl(); newNote(); }
   function newNote() {
@@ -372,7 +397,7 @@ function findQuiz(body) {
     const secs = (performance.now() - t0) / 1000;
     emojiRain();
     toast(`🏆 All ${need.length} ${pretty(ALLNOTES[pc])}’s in ${fmtTime(secs)} with ${misses} miss${misses === 1 ? '' : 'es'}!`, 4000);
-    if (!misses && secs < S.pref('learn.findbest', 1e9)) { S.setPref('learn.findbest', secs); S.setPref('learn.best.find', `all ${need.length} ${pretty(ALLNOTES[pc])}’s in ${fmtTime(secs)}, no misses`); }
+    if (!misses && secs < S.pref('learn.findbest', 1e9)) { S.setPref('learn.findbest', secs); S.setPref('learn.best.find', `all ${need.length} ${pretty(ALLNOTES[pc])}’s in ${fmtTime(secs)}, no misses (to fret ${toFret})`); }
     actions.innerHTML = ''; actions.append(btn('Next note', newNote, { cls: 'primary big', icon: 'next' }));
   }
   function showAll() { need.forEach(([s, f]) => fb.mark(s, f, 'found', pretty(ALLNOTES[pc]))); done = true; clearInterval(clock); actions.innerHTML = ''; actions.append(btn('Next note', newNote, { cls: 'primary big', icon: 'next' })); }
@@ -395,4 +420,131 @@ function findQuiz(body) {
   }
   rebuild();
   return () => clearInterval(clock);
+}
+
+// ---------- 5. music fundamentals: read the staff, name the key
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const LETTER_SEMI = [0, 2, 4, 5, 7, 9, 11];
+const ACC = { '': 0, '#': 1, b: -1 };
+const accSym = (a) => (a === '#' ? '♯' : a === 'b' ? '♭' : '');
+const MAJ_BY_FIFTHS = ['C♭', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯']; // −7 … +7
+const MIN_BY_FIFTHS = ['A♭', 'E♭', 'B♭', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F♯', 'C♯', 'G♯', 'D♯', 'A♯'];
+const diaOf = (p) => { const m = /^([A-G])(\d)$/.exec(p); return Number(m[2]) * 7 + LETTERS.indexOf(m[1]); };
+
+// One staff as SVG: clef, optional key signature, optional note (diatonic number + accidental).
+function staffSvg({ clef = 't', fifths = 0, note = null, acc = '' }) {
+  const sp = 14, top = 3.8 * sp, W = 300, H = top + 4 * sp + 3.6 * sp;
+  const bottom = BOTTOM[clef];
+  const yOf = (d) => top + 4 * sp - (d - bottom) * sp / 2;
+  let s = `<svg class="staff-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Staff">`;
+  for (let k = 0; k < 5; k++) s += `<line x1="8" x2="${W - 8}" y1="${top + k * sp}" y2="${top + k * sp}" stroke="currentColor" stroke-width="1.3"/>`;
+  s += '<g fill="currentColor">';
+  s += clef === 't' ? glyph('gclef', 16, top - 1.45 * sp, 7.1 * sp).svg : glyph('fclef', 18, top, 3.3 * sp).svg;
+  let x = 16 + 3.4 * sp;
+  if (fifths) {
+    const sharp = fifths > 0, list = KEY_POS[clef][sharp ? 's' : 'f'].slice(0, Math.abs(fifths));
+    list.forEach((p, k) => { const y = yOf(diaOf(p)); s += sharp ? glyph('sharp', x + k * 1.1 * sp, y - 1.35 * sp, 2.7 * sp).svg : glyph('flat', x + k * 1.1 * sp, y - 1.7 * sp, 2.4 * sp).svg; });
+  }
+  if (note != null) {
+    const nx = W / 2 + 30, y = yOf(note), nh = sp * 1.05;
+    // ledger lines
+    for (let d = bottom - 2; d >= note; d -= 2) s += `<rect x="${nx - 0.55 * sp}" y="${yOf(d) - 0.7}" width="${2.75 * sp}" height="1.4"/>`;
+    for (let d = bottom + 10; d <= note; d += 2) s += `<rect x="${nx - 0.55 * sp}" y="${yOf(d) - 0.7}" width="${2.75 * sp}" height="1.4"/>`;
+    s += glyph('whole', nx, y - nh / 2, nh).svg;
+    if (acc === '#') s += glyph('sharp', nx - 1.6 * sp, y - 1.35 * sp, 2.7 * sp).svg;
+    if (acc === 'b') s += glyph('flat', nx - 1.6 * sp, y - 1.7 * sp, 2.4 * sp).svg;
+  }
+  return s + '</g></svg>';
+}
+
+function readQuiz(body) {
+  let mode = S.pref('learn.readmode', 'notes');
+  let right_ = 0, total = 0, streak = 0, answered = false, last = null;
+  const controls = h('div', { class: 'learn-controls' });
+  const prompt = h('div', { class: 'learn-prompt' });
+  const score = h('div', { class: 'learn-score' });
+  const stage = h('div', { class: 'staff-stage' });
+  const below = h('div', {});
+  body.append(levelBar('read', () => restart()), controls, prompt, score, stage, below);
+  function paintControls() {
+    controls.innerHTML = '';
+    const seg = (val, label) => h('button', { type: 'button', class: 'seg-btn' + (mode === val ? ' on' : ''), onclick: () => { mode = val; S.setPref('learn.readmode', mode); paintControls(); restart(); } }, label);
+    controls.append(h('div', { class: 'segmented' }, seg('notes', '🎵 Read notes'), seg('keys', '🔑 Key signatures')));
+  }
+  const paintScore = () => { score.textContent = total ? `✅ ${right_} of ${total}   ·   🔥 streak ${streak}` : ''; };
+  const midiOf = (d, acc) => 12 * (Math.floor(d / 7) + 1) + LETTER_SEMI[d % 7] + ACC[acc];
+
+  // answers: a row of buttons; check(label) → true/false; onDone plays the sound
+  function answers(labels, ans, sound, cls = 'choice-grid') {
+    below.innerHTML = '';
+    const grid = h('div', { class: cls }, labels.map(o => h('button', { type: 'button', class: 'choice', onclick: (e) => {
+      if (answered) return; answered = true; total++;
+      const ok = o === ans;
+      sound();
+      e.currentTarget.classList.add(ok ? 'right' : 'wrong');
+      grid.querySelectorAll('.choice').forEach(c => { if (c.textContent === ans) c.classList.add('right'); });
+      if (ok) { right_++; streak++; right(e.currentTarget, streak % 5 === 0); saveBest('read', `${streak} in a row (${LEVEL_NAME[level('read')].slice(3)})`, (cur) => parseInt(cur, 10) < streak); }
+      else { streak = 0; wrong(e.currentTarget); }
+      paintScore();
+      setTimeout(next, ok ? 1300 : 2600);
+    } }, o)));
+    below.append(grid);
+  }
+
+  function noteRound() {
+    const L = level('read');
+    const clef = L === 'beg' ? 't' : rnd(['t', 'b']);
+    const bottom = BOTTOM[clef];
+    // Beginner: on the staff (one step below to one above). Intermediate/Hard: up to 3 ledger lines either side.
+    const lo = L === 'beg' ? bottom - 1 : bottom - 6, hi = L === 'beg' ? bottom + 9 : bottom + 14;
+    let d, acc = '', key;
+    do {
+      d = lo + Math.floor(Math.random() * (hi - lo + 1));
+      acc = '';
+      if (L === 'hard' && Math.random() < 0.6) {
+        const letter = LETTERS[d % 7];
+        const ok = [];
+        if ('CDFGA'.includes(letter)) ok.push('#');
+        if ('DEGAB'.includes(letter)) ok.push('b');
+        acc = rnd(ok);
+      }
+      key = clef + d + acc;
+    } while (key === last);
+    last = key;
+    const letter = LETTERS[d % 7], ans = letter + accSym(acc);
+    prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, `Name this note`), h('div', { class: 'hint' }, clef === 't' ? 'Treble clef' : 'Bass clef'));
+    stage.innerHTML = staffSvg({ clef, note: d, acc });
+    const sound = () => A.preview([midiOf(d, acc)]);
+    if (L !== 'hard') return answers(LETTERS, ans, sound, 'choice-grid letters');
+    // Hard: four spelled choices — the right one, the same letter with other accidentals, and a neighbour
+    const pc = (l, a) => (LETTER_SEMI[LETTERS.indexOf(l)] + ACC[a] + 12) % 12;
+    const valid = (l, a) => !(a === '#' && 'EB'.includes(l)) && !(a === 'b' && 'CF'.includes(l));
+    const target = pc(letter, acc), pool = [];
+    for (const l of LETTERS) for (const a of ['', '#', 'b']) if (valid(l, a) && pc(l, a) !== target) pool.push({ l, a, near: l === letter ? 0 : Math.abs(LETTERS.indexOf(l) - LETTERS.indexOf(letter)) === 1 ? 1 : 2 });
+    const pick = shuffle(pool).sort((x, y) => x.near - y.near).slice(0, 3).map(o => o.l + accSym(o.a));
+    answers(shuffle([ans, ...pick]), ans, sound);
+  }
+
+  function keyRound() {
+    const L = level('read');
+    const span = L === 'beg' ? 2 : L === 'int' ? 4 : 7;
+    const clef = L === 'beg' ? 't' : rnd(['t', 'b']);
+    let f; do { f = Math.floor(Math.random() * (2 * span + 1)) - span; } while (L !== 'beg' && span > 0 && 't' + f === last);
+    last = 't' + f;
+    const minor = L === 'hard' && Math.random() < 0.4;
+    const names = minor ? MIN_BY_FIFTHS : MAJ_BY_FIFTHS;
+    const label = (k) => `${names[k + 7]} ${minor ? 'minor' : 'major'}`;
+    const ans = label(f);
+    const others = shuffle([...Array(2 * span + 1).keys()].map(k => k - span).filter(k => k !== f)).sort((a, b) => Math.abs(a - f) - Math.abs(b - f)).slice(0, 3);
+    prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, minor ? 'Which minor key is this?' : 'Which major key is this?'),
+      h('div', { class: 'hint' }, minor ? 'Find the major key first, then go down three half steps.' : f > 0 ? 'Tip: the last sharp is a half step below the key.' : f < -1 ? 'Tip: the second-to-last flat names the key.' : ' '));
+    stage.innerHTML = staffSvg({ clef, fifths: f });
+    const tonic = 48 + ((((f * 7) % 12) + 12) % 12) + (minor ? -3 : 0);
+    const sound = () => A.preview(minor ? [tonic, tonic + 3, tonic + 7] : [tonic, tonic + 4, tonic + 7]);
+    answers(shuffle([ans, ...others.map(label)]), ans, sound);
+  }
+
+  function next() { answered = false; mode === 'notes' ? noteRound() : keyRound(); }
+  function restart() { right_ = total = streak = 0; last = null; paintScore(); next(); }
+  paintControls(); restart();
 }
