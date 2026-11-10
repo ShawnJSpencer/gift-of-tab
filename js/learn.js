@@ -7,6 +7,7 @@ import { TUNINGS, COMMON_CHORDS, voicing, parseChord } from './theory.js';
 import { chordDiagram, emojiRain } from './art.js';
 import { fretboard, burstAt, noteOf, pretty } from './fretboard.js';
 import { practiceTimer } from './practice.js';
+import * as LS from './learnstats.js';
 import * as A from './score/audio.js';
 import { openPitches } from './versions.js';
 import { glyph, BOTTOM, KEY_POS } from './score/render.js';
@@ -31,23 +32,30 @@ export function learnScreen(root, nav, which) {
   root.append(page);
   window.setTopColor('#EEF5F1');
   const quiz = QUIZZES.find(q => q.id === which);
+  const stats = which === 'stats';
   // practice time only counts inside a quiz, not while browsing the Learn menu
-  const timer = quiz ? practiceTimer() : { el: null, stop() {} };
+  const timer = quiz ? practiceTimer({ onSecond: () => LS.tick(quiz.id, level(quiz.id)) }) : { el: null, stop() {} };
   page.append(h('header', { class: 'page-head learn-head' },
-    h('button', { type: 'button', class: 'icon-btn', 'aria-label': quiz ? 'Back to Learn' : 'Menu', onclick: () => (quiz ? nav('#/learn') : window.openDrawer()) }, icon(quiz ? 'back' : 'menu')),
-    h('h1', { class: 'page-title' }, quiz ? `${quiz.emoji} ${quiz.title}` : '🎓 Learn'),
+    h('button', { type: 'button', class: 'icon-btn', 'aria-label': quiz || stats ? 'Back to Learn' : 'Menu', onclick: () => (quiz || stats ? nav('#/learn') : window.openDrawer()) }, icon(quiz || stats ? 'back' : 'menu')),
+    h('h1', { class: 'page-title' }, quiz ? `${quiz.emoji} ${quiz.title}` : stats ? '📊 Quiz stats' : '🎓 Learn'),
     h('span', { class: 'grow' }), timer.el,
     h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Home', onclick: () => nav('#/') }, icon('home'))));
   const body = h('div', { class: 'learn-body' });
   page.append(body);
   let cleanup = () => {};
-  if (!quiz) hub(body, nav);
+  if (stats) LS.statsPage(body, nav);
+  else if (!quiz) hub(body, nav);
   else cleanup = ({ chords: chordQuiz, circle: circleQuiz, ear: earQuiz, find: findQuiz, read: readQuiz })[quiz.id](body) || cleanup;
-  return () => { timer.stop(); cleanup(); };
+  return () => { timer.stop(); LS.flush(); cleanup(); };
 }
 
 function hub(body, nav) {
+  const s = LS.summary();
   body.append(h('p', { class: 'hint' }, 'Practice away from a song — time spent in a quiz counts toward today’s goal.'),
+    h('button', { type: 'button', class: 'card stats-strip', onclick: () => nav('#/learn/stats') },
+      h('span', { class: 'ss-emoji' }, '📊'),
+      h('span', { class: 'ss-text' }, h('b', {}, 'Your stats'), h('span', {}, s.answered ? `${s.answered} answered · ${Math.round(s.right / s.answered * 100)}% right · ${s.today} today · 🔥 ${s.streak}-day streak` : 'Progress, accuracy and trouble spots show up here once you start')),
+      icon('next')),
     h('div', { class: 'learn-grid' }, QUIZZES.map(q => h('button', { type: 'button', class: 'card learn-card', onclick: () => nav('#/learn/' + q.id) },
       h('span', { class: 'lc-emoji' }, q.emoji), h('b', {}, q.title), h('span', {}, q.sub),
       h('span', { class: 'lc-level' }, LEVEL_NAME[level(q.id)]),
@@ -135,6 +143,7 @@ function chordQuiz(body) {
   function grade(ok, elm) {
     if (answered) return;
     answered = true; total++;
+    LS.record('chords', level('chords'), card, ok, ok ? streak + 1 : 0);
     if (ok) { right_++; streak++; right(elm, streak % 5 === 0); saveBest('chords', `${streak} in a row (${LEVEL_NAME[level('chords')].slice(3)})`, (cur) => parseInt(cur, 10) < streak); }
     else { streak = 0; wrong(elm); }
     paintScore();
@@ -243,6 +252,7 @@ function circleQuiz(body) {
     wheel(false, (i, r, g) => {
       if (r !== ring) return toast(ring === 'maj' ? 'Use the outer ring for major keys' : 'Use the inner ring for minor keys');
       total++;
+      LS.record('circle', level('circle'), 'place:' + (ring === 'maj' ? MAJ[target] : MIN[target]), i === target, i === target ? streak + 1 : 0);
       if (i === target) { (ring === 'maj' ? shown : shownMin).add(i); right_++; streak++; playKey(i, ring === 'min'); right(g); setTimeout(placeNext, 500); }
       else { misses++; streak = 0; A.pluck([48 + ROOT_PC[i]]); wrong(g); g.classList.add('miss'); }
       paintScore();
@@ -264,7 +274,8 @@ function circleQuiz(body) {
       () => [`In the key of ${MAJ[i]}, the IV and V chords are…`, `${MAJ[(i + 11) % 12]} and ${MAJ[(i + 1) % 12]}`, MAJ.map((_, k) => `${MAJ[(k + 11) % 12]} and ${MAJ[(k + 1) % 12]}`)],
     ];
     const use = L === 'beg' ? [0, 4] : L === 'int' ? [0, 1, 2, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
-    const [q, ans, from] = kinds[rnd(use)]();
+    const kindId = rnd(use);
+    const [q, ans, from] = kinds[kindId]();
     const opts = shuffle([ans, ...shuffle(from.filter(x => x !== ans)).slice(0, 3)]);
     prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, q));
     const peek = S.pref('learn.circlepeek', false);
@@ -273,6 +284,7 @@ function circleQuiz(body) {
     const grid = h('div', { class: 'choice-grid' }, opts.map(o => h('button', { type: 'button', class: 'choice', onclick: (e) => {
       if (answered) return; answered = true; total++;
       const ok = o === ans;
+      LS.record('circle', level('circle'), ['fifth', 'fourth', 'relmin', 'relmaj', 'count', 'which', 'ivv'][kindId], ok, ok ? streak + 1 : 0);
       e.currentTarget.classList.add(ok ? 'right' : 'wrong');
       grid.querySelectorAll('.choice').forEach(c => { if (c.textContent === ans) c.classList.add('right'); });
       if (ok) { right_++; streak++; right(e.currentTarget, streak % 5 === 0); }
@@ -338,8 +350,10 @@ function earQuiz(body) {
     paintScore();
   }
   function markSolved() { if (solved) fb.positions(target).forEach(([s, f]) => fb.mark(s, f, 'right', pretty(noteOf(target)))); }
+  const earItem = () => noteOf(target) + (Math.floor(target / 12) - 1);
   function reveal() {
     if (solved || target == null) return;
+    if (tries === 0) LS.record('ear', level('ear'), earItem(), false, 0);
     solved = true; rounds++; streak = 0;
     fb.positions(target).forEach(([s, f]) => fb.mark(s, f, 'reveal', pretty(noteOf(target))));
     A.pluck(target); paintScore();
@@ -350,12 +364,14 @@ function earQuiz(body) {
     if (!started || solved) return;
     if (midi === target) {
       solved = true; rounds++;
+      if (tries === 0) LS.record('ear', level('ear'), earItem(), true, streak + 1);
       if (tries === 0) { right_++; streak++; saveBest('ear', `${streak} in a row (${frets === 0 ? 'open strings' : 'to fret ' + frets})`, (cur) => parseInt(cur, 10) < streak); }
       else streak = 0;
       markSolved(); right(cell, streak > 0 && streak % 5 === 0);
       paintScore();
       setTimeout(newRound, 1400);
     } else {
+      if (tries === 0) LS.record('ear', level('ear'), earItem(), false, 0);
       tries++;
       cell.classList.add('miss'); setTimeout(() => cell.classList.remove('miss'), 700);
       wrong(cell);
@@ -417,12 +433,14 @@ function findQuiz(body) {
     if (((midi % 12) + 12) % 12 === pc) {
       if (found.has(s + ':' + f)) return;
       found.add(s + ':' + f);
+      LS.record('find', level('find'), ALLNOTES[pc], true);
       fb.mark(s, f, 'found', pretty(ALLNOTES[pc]));
       right(cell, found.size === need.length);
       paintHead();
       if (found.size === need.length) setTimeout(finish, 350);
     } else {
       misses++;
+      LS.record('find', level('find'), ALLNOTES[pc], false, 0);
       cell.querySelector('.fb-dotname').textContent = pretty(noteOf(midi));
       cell.classList.add('miss'); setTimeout(() => { cell.classList.remove('miss'); if (!cell.classList.contains('found')) cell.querySelector('.fb-dotname').textContent = ''; }, 900);
       wrong(cell); paintHead();
@@ -485,11 +503,12 @@ function readQuiz(body) {
   const midiOf = (d, acc) => 12 * (Math.floor(d / 7) + 1) + LETTER_SEMI[d % 7] + ACC[acc];
 
   // answers: a row of buttons; check(label) → true/false; onDone plays the sound
-  function answers(labels, ans, sound, cls = 'choice-grid') {
+  function answers(labels, ans, sound, item, cls = 'choice-grid') {
     below.innerHTML = '';
     const grid = h('div', { class: cls }, labels.map(o => h('button', { type: 'button', class: 'choice', onclick: (e) => {
       if (answered) return; answered = true; total++;
       const ok = o === ans;
+      LS.record('read', level('read'), item, ok, ok ? streak + 1 : 0);
       sound();
       e.currentTarget.classList.add(ok ? 'right' : 'wrong');
       grid.querySelectorAll('.choice').forEach(c => { if (c.textContent === ans) c.classList.add('right'); });
@@ -525,14 +544,15 @@ function readQuiz(body) {
     prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, `Name this note`), h('div', { class: 'hint' }, clef === 't' ? 'Treble clef' : 'Bass clef'));
     stage.innerHTML = staffSvg({ clef, note: d, acc });
     const sound = () => A.preview([midiOf(d, acc)]);
-    if (L !== 'hard') return answers(LETTERS, ans, sound, 'choice-grid letters');
+    const item = `note:${clef === 't' ? 'Treble' : 'Bass'} ${letter}${acc}${Math.floor(d / 7)}`;
+    if (L !== 'hard') return answers(LETTERS, ans, sound, item, 'choice-grid letters');
     // Hard: four spelled choices — the right one, the same letter with other accidentals, and a neighbour
     const pc = (l, a) => (LETTER_SEMI[LETTERS.indexOf(l)] + ACC[a] + 12) % 12;
     const valid = (l, a) => !(a === '#' && 'EB'.includes(l)) && !(a === 'b' && 'CF'.includes(l));
     const target = pc(letter, acc), pool = [];
     for (const l of LETTERS) for (const a of ['', '#', 'b']) if (valid(l, a) && pc(l, a) !== target) pool.push({ l, a, near: l === letter ? 0 : Math.abs(LETTERS.indexOf(l) - LETTERS.indexOf(letter)) === 1 ? 1 : 2 });
     const pick = shuffle(pool).sort((x, y) => x.near - y.near).slice(0, 3).map(o => o.l + accSym(o.a));
-    answers(shuffle([ans, ...pick]), ans, sound);
+    answers(shuffle([ans, ...pick]), ans, sound, item);
   }
 
   function keyRound() {
@@ -551,7 +571,7 @@ function readQuiz(body) {
     stage.innerHTML = staffSvg({ clef, fifths: f });
     const tonic = 48 + ((((f * 7) % 12) + 12) % 12) + (minor ? -3 : 0);
     const sound = () => A.preview(minor ? [tonic, tonic + 3, tonic + 7] : [tonic, tonic + 4, tonic + 7]);
-    answers(shuffle([ans, ...others.map(label)]), ans, sound);
+    answers(shuffle([ans, ...others.map(label)]), ans, sound, 'key:' + ans);
   }
 
   function next() { answered = false; mode === 'notes' ? noteRound() : keyRound(); }

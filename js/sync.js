@@ -1,5 +1,6 @@
 // Sync with a private GitHub Gist so iPad and iPhone share the same library.
 import { db, replaceAll, onChange, pref, setPref } from './store.js';
+import { mergeLearn } from './learnstats.js';
 
 const API = 'https://api.github.com';
 const FILE = 'gift-of-tab.json';
@@ -53,7 +54,7 @@ export function disconnect() { setPref('sync.token', ''); setPref('sync.gist', '
 function newer(a, b) { return (a?.updated || 0) >= (b?.updated || 0) ? a : b; }
 
 export function merge(local, remote) {
-  const out = { v: 1, songs: {}, playlists: {}, practice: {}, deleted: {}, settings: {}, push: {} };
+  const out = { v: 1, songs: {}, playlists: {}, practice: {}, deleted: {}, settings: {}, push: {}, learn: {} };
   out.deleted = { ...(remote.deleted || {}) };
   for (const [k, v] of Object.entries(local.deleted || {})) out.deleted[k] = Math.max(v, out.deleted[k] || 0);
   for (const key of ['songs', 'playlists']) {
@@ -72,6 +73,8 @@ export function merge(local, remote) {
     for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) days[k] = Math.max(a[k] || 0, b[k] || 0);
     out.practice[d] = days;
   }
+  // quiz stats: counters only grow, so the larger number wins
+  out.learn = mergeLearn(local.learn || {}, remote.learn || {});
   // notification sign-ups: one per device, newest wins
   for (const d of new Set([...Object.keys(local.push || {}), ...Object.keys(remote.push || {})])) {
     const a = local.push?.[d], b = remote.push?.[d];

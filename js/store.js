@@ -13,7 +13,7 @@ export const deviceId = (() => {
 
 function blank() {
   return {
-    v: 1, songs: {}, playlists: {}, practice: {}, deleted: {}, push: {},
+    v: 1, songs: {}, playlists: {}, practice: {}, deleted: {}, push: {}, learn: {},
     settings: { goal: 30, concert: null, celebrated: {}, updated: 0 },
   };
 }

@@ -6,7 +6,7 @@ import { emojiRain } from './art.js';
 
 const IDLE = 120; // seconds without a tap before the clock pauses
 
-export function practiceTimer() {
+export function practiceTimer(opts = {}) {
   const pill = h('button', { type: 'button', class: 'tb timer-pill learn-timer', title: 'Practice time today (quizzes count!)' });
   let pending = 0, idle = 0;
   const goal = () => (S.db.settings.goal || 30) * 60;
@@ -25,6 +25,7 @@ export function practiceTimer() {
     if (idle++ >= IDLE) { paint(); return; }
     const before = S.practiceOn(S.dayKey()) + pending;
     pending++;
+    opts.onSecond && opts.onSecond();
     if (pending >= 10) { S.addPractice(pending); pending = 0; }
     const after = S.practiceOn(S.dayKey()) + pending;
     if (before < goal() && after >= goal()) celebrate();
