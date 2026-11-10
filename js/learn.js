@@ -121,12 +121,14 @@ function chordQuiz(body) {
   const score = h('div', { class: 'learn-score' });
   const bar = instrumentBar(() => next());
   body.append(levelBar('chords', () => { card = null; next(); }), bar, controls, score, stage);
-  // each level adds to the one before, but new cards favour the level's own chords
+  // each level adds to the one before; the level's own chords get a boost, and the smart picker
+  // favours chords you miss or haven't seen and shows ones you've mastered less often
   const pool = () => {
     const s = currentSetup(), L = level('chords');
-    const names = L === 'beg' ? CHORD_LEVELS.beg : L === 'int' ? [...CHORD_LEVELS.beg, ...CHORD_LEVELS.int, ...CHORD_LEVELS.int] : [...CHORD_LEVELS.beg, ...CHORD_LEVELS.int, ...CHORD_LEVELS.hard, ...CHORD_LEVELS.hard];
+    const own = CHORD_LEVELS[L], names = L === 'beg' ? own : L === 'int' ? [...CHORD_LEVELS.beg, ...own] : [...CHORD_LEVELS.beg, ...CHORD_LEVELS.int, ...own];
     return names.filter(n => parseChord(n) && voicing(n, s.tuning));
   };
+  const recent = [];
   function paintControls() {
     controls.innerHTML = '';
     const seg = (key, val, cur, label, fn) => h('button', { type: 'button', class: 'seg-btn' + (cur === val ? ' on' : ''), onclick: fn }, label);
@@ -152,14 +154,16 @@ function chordQuiz(body) {
   function next() {
     clearTimeout(pending);
     const list = pool();
-    let name; do { name = rnd(list); } while (list.length > 1 && card && name === card);
+    const own = CHORD_LEVELS[level('chords')];
+    const name = LS.pickSmart('chords', list.map(n => ({ item: n, boost: own.includes(n) && level('chords') !== 'beg' ? 1.6 : 1 })), recent, x => x.item).item;
+    recent.unshift(name); recent.length = Math.min(recent.length, Math.min(3, list.length - 1));
     card = name; flipped = false; answered = false;
     const s = currentSetup();
     const front = chordDiagram(name, { instrument: s.instrument, tuning: s.tuning });
     front.querySelector('.dg-name')?.remove();
     const flipBox = h('div', { class: 'flip' },
       h('div', { class: 'flip-inner' },
-        h('div', { class: 'flip-face front' }, front, h('div', { class: 'flip-q' }, 'What chord is this?')),
+        h('div', { class: 'flip-face front' }, front, h('div', { class: 'flip-q' }, LS.isWeak('chords', name) ? '🎯 One you’ve been missing' : 'What chord is this?')),
         h('div', { class: 'flip-face back' }, h('div', { class: 'flip-name' }, prettyChord(name)), alsoCalled(name), h('div', { class: 'flip-q' }, 'Did you get it?'))));
     stage.innerHTML = '';
     const flip = () => { flipped = !flipped; flipBox.classList.toggle('flipped', flipped); if (flipped) playChord(name); paintActions(); };
@@ -245,7 +249,7 @@ function circleQuiz(body) {
       below.innerHTML = ''; below.append(h('div', { class: 'learn-actions' }, btn('Start again', restart, { cls: 'primary', icon: 'next' })));
       wheel(true); return;
     }
-    if (majLeft.length) { ring = 'maj'; target = rnd(majLeft); } else { ring = 'min'; target = rnd(minLeft); }
+    if (majLeft.length) { ring = 'maj'; target = LS.pickSmart('circle', majLeft, [], i => 'place:' + MAJ[i]); } else { ring = 'min'; target = LS.pickSmart('circle', minLeft, [], i => 'place:' + MIN[i]); }
     prompt.innerHTML = '';
     prompt.append(h('span', {}, 'Tap where '), h('b', { class: 'big-key' }, ring === 'maj' ? `${MAJ[target]} major` : `${MIN[target].replace('m', '')} minor`), h('span', {}, ring === 'maj' ? ' goes (outer ring)' : ' goes (inner ring)'));
     if (ring === 'min' && shownMin.size === 0) prompt.append(h('div', { class: 'hint' }, 'Tip: each minor key sits right inside its relative major (A minor inside C).'));
@@ -259,6 +263,7 @@ function circleQuiz(body) {
     });
   }
   // ---- key questions
+  let lastKind = null;
   function ask() {
     answered = false;
     const L = level('circle');
@@ -274,7 +279,8 @@ function circleQuiz(body) {
       () => [`In the key of ${MAJ[i]}, the IV and V chords are…`, `${MAJ[(i + 11) % 12]} and ${MAJ[(i + 1) % 12]}`, MAJ.map((_, k) => `${MAJ[(k + 11) % 12]} and ${MAJ[(k + 1) % 12]}`)],
     ];
     const use = L === 'beg' ? [0, 4] : L === 'int' ? [0, 1, 2, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
-    const kindId = rnd(use);
+    const KIND_IDS = ['fifth', 'fourth', 'relmin', 'relmaj', 'count', 'which', 'ivv'];
+    const kindId = LS.pickSmart('circle', use, [lastKind], k => KIND_IDS[k]); lastKind = KIND_IDS[kindId];
     const [q, ans, from] = kinds[kindId]();
     const opts = shuffle([ans, ...shuffle(from.filter(x => x !== ans)).slice(0, 3)]);
     prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, q));
@@ -339,11 +345,12 @@ function earQuiz(body) {
   function newRound() {
     const all = [];
     for (let s = 0; s < fb.open.length; s++) for (let f = 0; f <= frets; f++) all.push(fb.open[s] + f);
-    let m; do { m = rnd(all); } while (all.length > 1 && m === target);
+    const nm = (x) => noteOf(x) + (Math.floor(x / 12) - 1);
+    const m = LS.pickSmart('ear', [...new Set(all)], target == null ? [] : [nm(target)], nm);
     target = m; tries = 0; solved = false;
     fb.unmark('right'); fb.unmark('reveal'); fb.unmark('miss');
     if (!names) holder.querySelectorAll('.fb-dotname').forEach(d => { d.textContent = ''; });
-    prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, '👂 Which note was that?'), h('div', { class: 'hint' }, 'Tap it on the fretboard. Same pitch in another spot counts too.'));
+    prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, '👂 Which note was that?'), h('div', { class: 'hint' }, LS.isWeak('ear', noteOf(target) + (Math.floor(target / 12) - 1)) ? '🎯 One you’ve been missing — tap it on the fretboard.' : 'Tap it on the fretboard. Same pitch in another spot counts too.'));
     actions.innerHTML = '';
     actions.append(btn('Play it again', () => A.pluck(target), { cls: 'primary', icon: 'play' }), btn('Show me', reveal, { cls: 'ghost' }), btn('Skip', newRound, { cls: 'ghost', icon: 'next' }));
     setTimeout(() => A.pluck(target), 150);
@@ -402,7 +409,7 @@ function findQuiz(body) {
   function rebuild() { fb = fretboard({ ...currentSetup(), from: 0, to: toFret, onTap: tap }); holder.innerHTML = ''; holder.append(fb.el); paintCtl(); newNote(); }
   function newNote() {
     const list = sharps ? ALLNOTES : NATURALS;
-    let n; do { n = rnd(list); } while (list.length > 1 && ALLNOTES.indexOf(n) === pc);
+    const n = LS.pickSmart('find', list, pc == null ? [] : [ALLNOTES[pc]]);
     pc = ALLNOTES.indexOf(n);
     found = new Set(); misses = 0; done = false; t0 = performance.now();
     need = fb.positions(pc, true);
@@ -520,28 +527,26 @@ function readQuiz(body) {
     below.append(grid);
   }
 
+  const recentRead = [];
   function noteRound() {
     const L = level('read');
     const clef = L === 'beg' ? 't' : rnd(['t', 'b']);
     const bottom = BOTTOM[clef];
     // Beginner: on the staff (one step below to one above). Intermediate/Hard: up to 3 ledger lines either side.
     const lo = L === 'beg' ? bottom - 1 : bottom - 6, hi = L === 'beg' ? bottom + 9 : bottom + 14;
-    let d, acc = '', key;
-    do {
-      d = lo + Math.floor(Math.random() * (hi - lo + 1));
-      acc = '';
-      if (L === 'hard' && Math.random() < 0.6) {
-        const letter = LETTERS[d % 7];
-        const ok = [];
-        if ('CDFGA'.includes(letter)) ok.push('#');
-        if ('DEGAB'.includes(letter)) ok.push('b');
-        acc = rnd(ok);
-      }
-      key = clef + d + acc;
-    } while (key === last);
-    last = key;
+    const cands = [];
+    for (let dd = lo; dd <= hi; dd++) {
+      const lt = LETTERS[dd % 7];
+      cands.push({ d: dd, acc: '' });
+      if (L === 'hard') { if ('CDFGA'.includes(lt)) cands.push({ d: dd, acc: '#' }); if ('DEGAB'.includes(lt)) cands.push({ d: dd, acc: 'b' }); }
+    }
+    const itemOf = (c) => `note:${clef === 't' ? 'Treble' : 'Bass'} ${LETTERS[c.d % 7]}${c.acc}${Math.floor(c.d / 7)}`;
+    const pickN = LS.pickSmart('read', cands, recentRead, itemOf);
+    const d = pickN.d, acc = pickN.acc;
+    recentRead.unshift(itemOf(pickN)); recentRead.length = Math.min(recentRead.length, 4);
     const letter = LETTERS[d % 7], ans = letter + accSym(acc);
-    prompt.innerHTML = ''; prompt.append(h('b', { class: 'big-q' }, `Name this note`), h('div', { class: 'hint' }, clef === 't' ? 'Treble clef' : 'Bass clef'));
+    prompt.innerHTML = ''; const itemNow = `note:${clef === 't' ? 'Treble' : 'Bass'} ${letter}${acc}${Math.floor(d / 7)}`;
+    prompt.append(h('b', { class: 'big-q' }, `Name this note`), h('div', { class: 'hint' }, (clef === 't' ? 'Treble clef' : 'Bass clef') + (LS.isWeak('read', itemNow) ? ' · 🎯 one you’ve been missing' : '')));
     stage.innerHTML = staffSvg({ clef, note: d, acc });
     const sound = () => A.preview([midiOf(d, acc)]);
     const item = `note:${clef === 't' ? 'Treble' : 'Bass'} ${letter}${acc}${Math.floor(d / 7)}`;
@@ -559,9 +564,12 @@ function readQuiz(body) {
     const L = level('read');
     const span = L === 'beg' ? 2 : L === 'int' ? 4 : 7;
     const clef = L === 'beg' ? 't' : rnd(['t', 'b']);
-    let f; do { f = Math.floor(Math.random() * (2 * span + 1)) - span; } while (L !== 'beg' && span > 0 && 't' + f === last);
-    last = 't' + f;
-    const minor = L === 'hard' && Math.random() < 0.4;
+    const kc = [];
+    for (let k = -span; k <= span; k++) { kc.push({ f: k, minor: false }); if (L === 'hard') kc.push({ f: k, minor: true, boost: 0.7 }); }
+    const keyItem = (c) => `key:${(c.minor ? MIN_BY_FIFTHS : MAJ_BY_FIFTHS)[c.f + 7]} ${c.minor ? 'minor' : 'major'}`;
+    const kp = LS.pickSmart('read', kc, [last], keyItem);
+    last = keyItem(kp);
+    const f = kp.f, minor = kp.minor;
     const names = minor ? MIN_BY_FIFTHS : MAJ_BY_FIFTHS;
     const label = (k) => `${names[k + 7]} ${minor ? 'minor' : 'major'}`;
     const ans = label(f);

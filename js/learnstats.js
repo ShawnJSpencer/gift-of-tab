@@ -160,3 +160,30 @@ export function statsPage(body, nav) {
 const tile = (big, small, cls = '', note = null, noteCls = '') => h('div', { class: 'card stat-tile ' + cls }, h('b', {}, big), h('span', {}, small), note ? h('em', { class: 'st-note ' + noteCls }, note) : null);
 const chip = (label, x, cls) => h('span', { class: 'spot ' + cls, title: `${x.n} tries, ${x.p}% right` }, label, h('small', {}, `${x.p}%`));
 
+
+// ---------- smart picking: favour what you miss and what's new, go easy on what you've mastered
+// Weight of one item from its history across devices.
+export function weightOf(quiz, item) {
+  let n = 0, r = 0;
+  for (const dev of Object.values(S.db.learn || {})) { const v = dev.i?.[quiz]?.[item]; if (v) { n += v[0] || 0; r += v[1] || 0; } }
+  if (!n) return 2;                                   // never seen: bring it in
+  const acc = (r + 1) / (n + 2);                      // smoothed so one lucky answer isn't "mastered"
+  let w = 0.25 + 4 * (1 - acc);
+  if (n >= 6 && r / n >= 0.9) w *= 0.5;               // clearly known: show it less
+  return w;
+}
+// Is this one you've been missing? (for a little 🎯 tag)
+export function isWeak(quiz, item) {
+  let n = 0, r = 0;
+  for (const dev of Object.values(S.db.learn || {})) { const v = dev.i?.[quiz]?.[item]; if (v) { n += v[0] || 0; r += v[1] || 0; } }
+  return n >= 3 && r / n < 0.7;
+}
+// Pick one of `list` (items or {item, boost}) by weight, skipping the most recent picks when there's choice.
+export function pickSmart(quiz, list, recent = [], keyOf = (x) => x) {
+  const fresh = list.filter(x => !recent.includes(keyOf(x)));
+  const pool = fresh.length ? fresh : list;
+  const ws = pool.map(x => weightOf(quiz, keyOf(x)) * (x && x.boost || 1));
+  let t = Math.random() * ws.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { t -= ws[i]; if (t <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
