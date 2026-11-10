@@ -96,9 +96,18 @@ const CHORD_LEVELS = {
   int: ['Am', 'Dm', 'Em', 'Bm', 'Cm', 'Gm', 'Fm', 'F#m', 'C#m', 'G#m', 'Bb', 'Eb', 'Ab', 'B', 'F#', 'Db'],
   hard: ['C7', 'D7', 'E7', 'G7', 'A7', 'B7', 'Cmaj7', 'Fmaj7', 'Gmaj7', 'Dmaj7', 'Am7', 'Em7', 'Dm7', 'Bm7', 'Dsus2', 'Dsus4', 'Asus2', 'Asus4', 'Esus4', 'Gsus4', 'Csus2', 'Cadd9', 'Gadd9', 'Bdim', 'Edim', 'Caug', 'D/F#', 'G/B', 'C/E'],
 };
+// F♯ and G♭ are the same sound; which name is used depends on the key. Show the other one too.
+const ENHARM = { 'C#': 'D♭', Db: 'C♯', 'D#': 'E♭', Eb: 'D♯', 'F#': 'G♭', Gb: 'F♯', 'G#': 'A♭', Ab: 'G♯', 'A#': 'B♭', Bb: 'A♯' };
+const prettyChord = (n) => n.replace(/#/g, '♯').replace(/([A-G])b/g, '$1♭');
+function alsoCalled(name) {
+  const m = /^([A-G][#b]?)(.*)$/.exec(name);
+  if (!m || !ENHARM[m[1]] || m[2].includes('/')) return null;
+  return h('div', { class: 'flip-also' }, `also called ${ENHARM[m[1]]}${prettyChord(m[2])}`);
+}
 function chordQuiz(body) {
   let style = S.pref('learn.chordstyle', 'flip');
-  let card = null, flipped = false, answered = false, right_ = 0, total = 0, streak = 0;
+  let card = null, flipped = false, answered = false, right_ = 0, total = 0, streak = 0, pending = 0;
+  const later = (ms) => { clearTimeout(pending); pending = setTimeout(next, ms); };
   const controls = h('div', { class: 'learn-controls' });
   const stage = h('div', { class: 'chord-stage' });
   const score = h('div', { class: 'learn-score' });
@@ -129,9 +138,10 @@ function chordQuiz(body) {
     if (ok) { right_++; streak++; right(elm, streak % 5 === 0); saveBest('chords', `${streak} in a row (${LEVEL_NAME[level('chords')].slice(3)})`, (cur) => parseInt(cur, 10) < streak); }
     else { streak = 0; wrong(elm); }
     paintScore();
-    if (style === 'flip') setTimeout(next, 900);
+    if (style === 'flip') later(900);
   }
   function next() {
+    clearTimeout(pending);
     const list = pool();
     let name; do { name = rnd(list); } while (list.length > 1 && card && name === card);
     card = name; flipped = false; answered = false;
@@ -141,7 +151,7 @@ function chordQuiz(body) {
     const flipBox = h('div', { class: 'flip' },
       h('div', { class: 'flip-inner' },
         h('div', { class: 'flip-face front' }, front, h('div', { class: 'flip-q' }, 'What chord is this?')),
-        h('div', { class: 'flip-face back' }, h('div', { class: 'flip-name' }, name), h('div', { class: 'flip-q' }, 'Did you get it?'))));
+        h('div', { class: 'flip-face back' }, h('div', { class: 'flip-name' }, prettyChord(name)), alsoCalled(name), h('div', { class: 'flip-q' }, 'Did you get it?'))));
     stage.innerHTML = '';
     const flip = () => { flipped = !flipped; flipBox.classList.toggle('flipped', flipped); if (flipped) playChord(name); paintActions(); };
     flipBox.addEventListener('click', () => { if (style === 'flip') flip(); });
@@ -162,11 +172,11 @@ function chordQuiz(body) {
         if (answered) return;
         const ok = n === name;
         e.currentTarget.classList.add(ok ? 'right' : 'wrong');
-        if (!ok) choices.querySelectorAll('.choice').forEach(c => { if (c.textContent === name) c.classList.add('right'); });
+        if (!ok) choices.querySelectorAll('.choice').forEach(c => { if (c.textContent === prettyChord(name)) c.classList.add('right'); });
         flipBox.classList.add('flipped'); playChord(name);
         grade(ok, e.currentTarget);
-        setTimeout(next, ok ? 1300 : 2200);
-      } }, n)));
+        later(ok ? 1300 : 2200);
+      } }, prettyChord(n))));
       stage.append(choices);
     }
     stage.append(actions);

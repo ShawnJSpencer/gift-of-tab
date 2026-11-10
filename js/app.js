@@ -86,7 +86,9 @@ route();
 S.onChange((kind) => {
   if (kind !== 'sync') return;
   const scr = document.body.dataset.screen;
-  if (scr === 'song' || scr === 'home') return; // song stays put mid-performance; home refreshes itself
+  // song stays put mid-performance; home refreshes itself; a quiz or the tuner would lose your
+  // streak / microphone if reloaded (the quiz's own practice-time saves set off a sync)
+  if (scr === 'song' || scr === 'home' || scr === 'learn' || scr === 'tuner') return;
   route();
 });
 

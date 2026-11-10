@@ -703,6 +703,7 @@ html.stage .tech-svg .ev.playing .playbox { fill: rgba(197, 222, 211, .10); stro
 .flip-face .diagram svg { width: 170px; height: auto; }
 .flip-name { font-family: var(--font); font-weight: 900; font-size: 4.2rem; letter-spacing: -.01em; } /* Bungee is all caps — it turned "Am" into "AM" */
 .flip-q { font-weight: 900; opacity: .75; }
+.flip-also { font-weight: 800; font-size: 1.05rem; opacity: .85; margin: -4px 0 6px; }
 /* circle of fifths */
 .wheel-wrap { display: flex; justify-content: center; }
 .wheel { width: min(440px, 92vw); height: auto; touch-action: manipulation; }
