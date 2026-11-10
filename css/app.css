@@ -805,3 +805,7 @@ html.stage .tech-svg .ev.playing .playbox { fill: rgba(197, 222, 211, .10); stro
   .acc-bar i { max-width: 50%; }
   .sq-levels > :nth-child(5n) { display: none; }
 }
+
+.learn-sound { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; margin: 18px 0 6px; }
+.learn-sound .ls-lab { font-weight: 800; color: var(--muted); }
+.learn-sound .seg-btn { white-space: nowrap; }

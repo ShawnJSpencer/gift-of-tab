@@ -115,22 +115,36 @@ export function chime() {
   const c = ac(); unlock(c); const t = c.currentTime + 0.02;
   [[76, 0], [83, 0.09], [88, 0.18]].forEach(([m, dt]) => tone(m, t + dt, 0.35, 0.33));
 }
-// A brief, gnarly, distorted rock chord (a crunchy cluster) for a wrong answer.
-export function buzz() {
+// Wrong-answer sounds. 'gentle' (default): a soft, muted "bwomp" — two low notes a half step apart
+// sliding down, no distortion. 'rock': the original crunchy distorted chord, but quieter.
+export function buzz(style = 'gentle') {
+  if (style === 'off') return;
   const c = ac(); unlock(c); const t = c.currentTime + 0.02;
-  const shaper = c.createWaveShaper();
-  const curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 9); }
-  shaper.curve = curve; shaper.oversample = '4x';
-  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+  if (style === 'rock') {
+    const shaper = c.createWaveShaper();
+    const curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 4); }
+    shaper.curve = curve; shaper.oversample = '4x';
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.015);
+    g.gain.setTargetAtTime(0.0001, t + 0.28, 0.06);
+    shaper.connect(lp); lp.connect(g); g.connect(master);
+    [40, 41, 46].forEach((m, k) => {
+      const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq(m) * (1 + (k - 1) * 0.004);
+      const og = c.createGain(); og.gain.value = 0.3; o.connect(og); og.connect(shaper);
+      o.start(t + k * 0.012); o.stop(t + 0.6);
+    });
+    return;
+  }
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(900, t); lp.frequency.exponentialRampToValueAtTime(350, t + 0.35);
   const g = c.createGain();
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
-  g.gain.setTargetAtTime(0.0001, t + 0.38, 0.06);
-  shaper.connect(lp); lp.connect(g); g.connect(master);
-  // E2, F2 and A#2: a minor second plus a tritone — as wrong as it gets
-  [40, 41, 46, 52].forEach((m, k) => {
-    const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq(m) * (1 + (k - 1.5) * 0.004);
-    const og = c.createGain(); og.gain.value = 0.35; o.connect(og); og.connect(shaper);
-    o.start(t + k * 0.012); o.stop(t + 0.75);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.13, t + 0.02);
+  g.gain.setTargetAtTime(0.0001, t + 0.22, 0.07);
+  lp.connect(g); g.connect(master);
+  [52, 53].forEach((m) => { // E3 + F3, bending down a little: "uh-oh"
+    const o = c.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(freq(m), t); o.frequency.exponentialRampToValueAtTime(freq(m - 1.5), t + 0.4);
+    o.connect(lp); o.start(t); o.stop(t + 0.6);
   });
 }
 // A single plucked string note (for fretboard taps) or a strummed chord.

@@ -25,7 +25,7 @@ const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) {
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 // right / wrong feedback (after the note you tapped has sounded)
 const right = (elm, big) => { setTimeout(() => A.chime(), 260); if (elm) burstAt(elm, big); };
-const wrong = (elm) => { setTimeout(() => A.buzz(), 330); if (elm) { elm.classList.remove('shake'); void elm.offsetWidth; elm.classList.add('shake'); } };
+const wrong = (elm) => { setTimeout(() => A.buzz(S.pref('learn.wrongsound', 'gentle')), 330); if (elm) { elm.classList.remove('shake'); void elm.offsetWidth; elm.classList.add('shake'); } };
 
 export function learnScreen(root, nav, which) {
   const page = h('div', { class: 'page learn-page' });
@@ -59,7 +59,20 @@ function hub(body, nav) {
     h('div', { class: 'learn-grid' }, QUIZZES.map(q => h('button', { type: 'button', class: 'card learn-card', onclick: () => nav('#/learn/' + q.id) },
       h('span', { class: 'lc-emoji' }, q.emoji), h('b', {}, q.title), h('span', {}, q.sub),
       h('span', { class: 'lc-level' }, LEVEL_NAME[level(q.id)]),
-      S.pref('learn.best.' + q.id) ? h('span', { class: 'lc-best' }, '🏆 ' + S.pref('learn.best.' + q.id)) : null))));
+      S.pref('learn.best.' + q.id) ? h('span', { class: 'lc-best' }, '🏆 ' + S.pref('learn.best.' + q.id)) : null))),
+    soundPicker());
+}
+function soundPicker() {
+  const row = h('div', { class: 'learn-sound' });
+  const paint = () => {
+    const cur = S.pref('learn.wrongsound', 'gentle');
+    row.innerHTML = '';
+    row.append(h('span', { class: 'ls-lab' }, 'Wrong-answer sound'), h('div', { class: 'segmented' },
+      [['gentle', '🙊 Gentle'], ['rock', '🎸 Rock'], ['off', '🔇 Off']].map(([k, l]) => h('button', { type: 'button', class: 'seg-btn' + (cur === k ? ' on' : ''),
+        onclick: () => { S.setPref('learn.wrongsound', k); paint(); A.buzz(k); } }, l))));
+  };
+  paint();
+  return row;
 }
 
 // ---------- shared: difficulty

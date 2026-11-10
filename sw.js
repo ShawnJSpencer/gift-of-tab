@@ -1,5 +1,5 @@
 // Offline support: the app works on stage even without Wi-Fi.
-const CACHE = 'gift-of-tab-v30';
+const CACHE = 'gift-of-tab-v31';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/model.js', 'js/theory.js',
   'js/importer.js', 'js/pdfimport.js', 'js/tuner.js', 'js/learn.js', 'js/learnstats.js', 'js/fretboard.js', 'js/practice.js', 'js/pdfrhythm.js', 'js/glyphs.js', 'js/versions.js', 'js/pickers.js', 'js/push.js', 'js/art.js', 'js/song.js', 'js/pages.js', 'js/score/glyphs.js', 'js/score/model.js', 'js/score/render.js', 'js/score/audio.js', 'js/score/screen.js', 'js/score/tech.js', 'js/score/techrender.js', 'js/score/techscreen.js', 'js/score/transport.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 // cache: 'reload' / 'no-cache' skip the browser's 10-minute HTTP cache, so an update never mixes old and new files
