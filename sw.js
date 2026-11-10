@@ -1,8 +1,9 @@
 // Offline support: the app works on stage even without Wi-Fi.
-const CACHE = 'gift-of-tab-v29';
+const CACHE = 'gift-of-tab-v30';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/ui.js', 'js/store.js', 'js/sync.js', 'js/model.js', 'js/theory.js',
   'js/importer.js', 'js/pdfimport.js', 'js/tuner.js', 'js/learn.js', 'js/learnstats.js', 'js/fretboard.js', 'js/practice.js', 'js/pdfrhythm.js', 'js/glyphs.js', 'js/versions.js', 'js/pickers.js', 'js/push.js', 'js/art.js', 'js/song.js', 'js/pages.js', 'js/score/glyphs.js', 'js/score/model.js', 'js/score/render.js', 'js/score/audio.js', 'js/score/screen.js', 'js/score/tech.js', 'js/score/techrender.js', 'js/score/techscreen.js', 'js/score/transport.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
-self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
+// cache: 'reload' / 'no-cache' skip the browser's 10-minute HTTP cache, so an update never mixes old and new files
+self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
@@ -13,7 +14,7 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin !== location.origin) return;
   // app files: network first (so updates arrive), fall back to cache offline
-  e.respondWith(fetch(e.request).then(res => { const c = res.clone(); caches.open(CACHE).then(ca => ca.put(e.request, c)); return res; }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html'))));
+  e.respondWith(fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => { const c = res.clone(); caches.open(CACHE).then(ca => ca.put(e.request, c)); return res; }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html'))));
 });
 
 // ---- push notifications (sent by the scheduled GitHub job)

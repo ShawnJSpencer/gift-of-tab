@@ -16,8 +16,22 @@ function mine() {
   m.d ||= {}; m.i ||= {}; m.s ||= {};
   return m;
 }
+// A small separate copy of this device's own stats, restored on start — belt and braces in case the
+// main data ever fails to save or gets replaced.
+const BACKUP = 'gotab.learn.mine';
+(() => {
+  try {
+    const b = JSON.parse(localStorage.getItem(BACKUP) || 'null');
+    if (b) { const L = (S.db.learn ||= {}); L[S.deviceId] = S.mergeLearn(L[S.deviceId] || {}, b); }
+  } catch {}
+})();
 let unsaved = 0;
-function touch(force) { if (force || ++unsaved >= 10) { unsaved = 0; S.save('practice'); } }
+function touch(force) {
+  if (force || ++unsaved >= 10) {
+    unsaved = 0; S.save('practice');
+    try { localStorage.setItem(BACKUP, JSON.stringify(mine())); } catch {}
+  }
+}
 
 // One answer. item: what was asked (a chord name, a note…); streak: the current streak after it.
 export function record(quiz, lvl, item, ok, streak = 0) {
@@ -38,14 +52,7 @@ export function tick(quiz, lvl) {
 }
 export function flush() { if (unsaved) touch(true); }
 
-// Merge two copies of the learn data: every number only ever grows, so take the larger.
-export function mergeLearn(a = {}, b = {}) {
-  if (typeof a === 'number' || typeof b === 'number') return Math.max(+a || 0, +b || 0);
-  if (Array.isArray(a) || Array.isArray(b)) { a = a || []; b = b || []; return Array.from({ length: Math.max(a.length, b.length) }, (_, i) => Math.max(a[i] || 0, b[i] || 0)); }
-  const out = {};
-  for (const k of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) out[k] = mergeLearn(a?.[k], b?.[k]);
-  return out;
-}
+export const mergeLearn = S.mergeLearn;
 
 // ---------- totals across devices
 function all() {

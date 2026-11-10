@@ -1,6 +1,5 @@
 // Sync with a private GitHub Gist so iPad and iPhone share the same library.
-import { db, replaceAll, onChange, pref, setPref } from './store.js';
-import { mergeLearn } from './learnstats.js';
+import { db, replaceAll, onChange, pref, setPref, mergeLearn } from './store.js';
 
 const API = 'https://api.github.com';
 const FILE = 'gift-of-tab.json';

@@ -37,7 +37,21 @@ export function save(kind = 'edit') {
 export function saveNow() { clearTimeout(saveTimer); try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} }
 window.addEventListener('pagehide', saveNow);
 
+// Merge two copies of the learn data: every number only ever grows, so take the larger.
+export function mergeLearn(a = {}, b = {}) {
+  if (typeof a === 'number' || typeof b === 'number') return Math.max(+a || 0, +b || 0);
+  // (a counter that exists on only one side must be kept as-is — this used to come out empty)
+  if (Array.isArray(a) || Array.isArray(b)) { a = Array.isArray(a) ? a : []; b = Array.isArray(b) ? b : []; return Array.from({ length: Math.max(a.length, b.length) }, (_, i) => Math.max(a[i] || 0, b[i] || 0)); }
+  const out = {};
+  for (const k of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) out[k] = mergeLearn(a?.[k], b?.[k]);
+  return out;
+}
+
+
 export function replaceAll(data) {
+  // Quiz stats only ever grow: whatever arrives (another device, an older copy of the app on
+  // another device), keep the larger counts so a sync can never wipe them.
+  data = { ...data, learn: mergeLearn(db.learn || {}, data.learn || {}) };
   // Keep the same song/playlist objects where possible so open screens stay bound to live data.
   const keep = { songs: db.songs || {}, playlists: db.playlists || {} };
   for (const k of Object.keys(db)) delete db[k];
